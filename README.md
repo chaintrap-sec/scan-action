@@ -79,31 +79,23 @@ jobs:
 
 ## What gets blocked vs warned
 
-| Signal | Default | Source |
-|--------|---------|--------|
-| Known malicious packages | **Block** | [osv.dev](https://osv.dev) |
-| Tenant IOC exact match | **Block** | Supabase (optional) |
-| CVE/GHSA advisories | Warn | OSV |
-| Fresh release (<7 days) | Warn | Registry metadata |
-| npm install lifecycle scripts | Warn | Registry metadata |
-| Typosquat similarity | Warn | Heuristic |
-| Package content malware patterns (PR diff only) | **Block** (CRITICAL/HIGH) | Tarball static scan |
-| OSV/registry/content errors | Warn (configurable block) | Retry + `fail-on-error` |
-| `pull_request_target` / unpinned actions | **Block** (CRITICAL/HIGH) | Workflow audit |
+| Signal | Default |
+|--------|---------|
+| Known malicious packages | **Block** |
+| Your organization's private threat indicators (optional) | **Block** |
+| Known vulnerabilities (CVE/GHSA) | Warn |
+| Fresh release (<7 days) | Warn |
+| npm install lifecycle scripts | Warn |
+| Typosquat similarity | Warn |
+| Malware patterns inside package code (PR-added packages) | **Block** (CRITICAL/HIGH) |
+| Scan errors | Warn (set `fail-on-error: "true"` to block) |
+| Risky CI workflow configuration (`pull_request_target`, unpinned actions) | **Block** (CRITICAL/HIGH) |
 
-## Zero secrets mode
+## Zero-config by default
 
-Works with **no configuration** — OSV-only blocks known malicious npm/PyPI packages.
+Works with **no secrets and no setup** — known malicious npm/PyPI packages are blocked out of the box.
 
-Optional Supabase IOC layer (design partners):
-
-```yaml
-- uses: chaintrap-sec/scan-action@v1
-  with:
-    supabase-url: ${{ secrets.CHAINTRAP_SUPABASE_URL }}
-    supabase-ioc-key: ${{ secrets.CHAINTRAP_IOC_READ_KEY }}
-    org-id: org-your-partner-id
-```
+Teams with a private threat-intelligence feed can connect it via action inputs — see [docs/IOC_PARTNER_ONBOARDING.md](docs/IOC_PARTNER_ONBOARDING.md).
 
 ## Repo policy (`.chaintrap.yml`)
 
@@ -124,10 +116,10 @@ ignore:
 
 ## Privacy
 
-- Scans run **entirely on the GitHub runner**
-- Only public registry metadata + OSV API calls leave the runner
-- On PRs, diff-added packages may be downloaded as tarballs/wheels for local static analysis (never uploaded)
-- No repository source is uploaded to Chaintrap cloud
+- Scans run **entirely on your GitHub runner**
+- Only package names and versions are checked against public vulnerability databases and registries
+- On PRs, newly added packages may be downloaded to the runner for local static analysis — nothing is uploaded
+- Your source code never leaves the runner
 
 See [docs/PRIVACY.md](docs/PRIVACY.md).
 
@@ -137,7 +129,5 @@ See [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## Docs
 
-- [Design partner onboarding](docs/DESIGN_PARTNER_ONBOARDING.md)
-- [Release process](docs/RELEASE_PROCESS.md)
-- [IOC partner setup](docs/IOC_PARTNER_ONBOARDING.md)
-- [Release checklist](RELEASE_CHECKLIST.md)
+- [Onboarding guide](docs/DESIGN_PARTNER_ONBOARDING.md)
+- [Private threat intel setup](docs/IOC_PARTNER_ONBOARDING.md)
