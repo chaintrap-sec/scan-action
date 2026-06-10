@@ -161,6 +161,20 @@ def test_safe_extract_zip_rejects_traversal():
         shutil.rmtree(dest, ignore_errors=True)
 
 
+def test_run_local_scan_empty_workspace_is_clean_pass(tmp_path):
+    from chaintrap_ci.scan import run_local_scan
+
+    rollup = run_local_scan(tmp_path)
+    assert rollup["package_count"] == 0
+    assert rollup["bundle_status"] == "complete"
+    assert rollup["items"] == []
+
+    exit_code, blocked, warned = evaluate_scan_rollup(rollup, ScanConfig())
+    assert exit_code == 0
+    assert not blocked
+    assert not warned
+
+
 def test_ioc_client_rejects_http_url():
     from chaintrap_ci.ioc_client import fetch_org_iocs
 

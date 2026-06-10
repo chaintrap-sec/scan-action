@@ -298,7 +298,22 @@ def run_local_scan(
         )
 
     if not discovered:
-        raise ValueError("No packages discovered; nothing to scan.")
+        # Not an error: a PR with no dependency changes (diff mode) or a repo
+        # without lockfiles (full mode) is a clean pass, and the workflow
+        # audit must still run downstream.
+        scan_mode = f"runner-osv-ioc-{discovery_mode}"
+        return {
+            "schema_version": 1,
+            "scan_mode": scan_mode,
+            "bundle_id": str(uuid.uuid4()),
+            "source_repo": repo,
+            "source_ref": ref,
+            "bundle_status": "complete",
+            "items": [],
+            "ioc_enabled": bool(supabase_url and supabase_key and org_id),
+            "package_count": 0,
+            "discovery_mode": discovery_mode,
+        }
 
     keys: list[PackageKey] = []
     parsed_items: list[dict[str, str]] = []
