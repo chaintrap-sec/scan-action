@@ -1,0 +1,17 @@
+# npm popular names for typosquat heuristic (subset)
+react
+lodash
+express
+axios
+webpack
+typescript
+next
+vue
+angular
+eslint
+prettier
+requests
+flask
+django
+pandas
+numpy

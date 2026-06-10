@@ -1,0 +1,54 @@
+name: Self-test
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pyyaml -e vendor/chaintrap-static-scan -e vendor/chaintrap-ci
+      - run: pytest tests/test_scan_action.py -q -k "not integration"
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pyyaml -e vendor/chaintrap-static-scan -e vendor/chaintrap-ci
+      - run: pytest tests/test_scan_action.py -q -k integration
+
+  dogfood-malicious:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        id: scan
+        with:
+          paths: test_fixtures/malicious_dep_test
+          heuristics: "false"
+          audit-workflows: "false"
+        continue-on-error: true
+      - run: test "${{ steps.scan.outputs.exit-code }}" = "2"
+
+  dogfood-workflow-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          paths: test_fixtures/malicious_dep_test
+          audit-workflows: "true"
+          block-workflow-critical: "false"
+          heuristics: "false"
+        continue-on-error: true

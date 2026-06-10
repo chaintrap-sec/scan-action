@@ -1,0 +1,30 @@
+# Copy to consumer repo: .github/workflows/chaintrap.yml
+
+name: Chaintrap
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: chaintrap-sec/scan-action@v1
+        id: chaintrap
+
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: ${{ steps.chaintrap.outputs.sarif-file }}
+          category: chaintrap

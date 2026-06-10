@@ -1,0 +1,8 @@
+{
+  "name": "chaintrap-malicious-dep-test",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "ts-logger-pack": "1.1.3"
+  }
+}

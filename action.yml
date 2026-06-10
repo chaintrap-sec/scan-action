@@ -1,0 +1,167 @@
+name: Chaintrap Supply Chain Scan
+description: Runner-local malicious dependency + workflow hardening scan (npm/PyPI lockfiles, OSV MAL-*, optional IOC)
+branding:
+  icon: shield
+  color: teal
+
+inputs:
+  supabase-url:
+    description: Supabase project URL (optional tenant IOC layer)
+    required: false
+    default: ""
+  supabase-ioc-key:
+    description: Supabase read key for package_ioc_indicators
+    required: false
+    default: ""
+  org-id:
+    description: Tenant org id for IOC filter (e.g. org-acme)
+    required: false
+    default: ""
+  fail-on-ioc:
+    description: Block on Supabase IOC exact match — block or none
+    required: false
+    default: block
+  fail-on-mal:
+    description: Block on OSV MAL-* ids — true or false
+    required: false
+    default: "true"
+  fail-on-cve:
+    description: Block on OSV CVE/GHSA — critical, high, medium, low, or none
+    required: false
+    default: none
+  ecosystems:
+    description: Comma-separated ecosystems (npm, pypi)
+    required: false
+    default: npm,pypi
+  paths:
+    description: Comma-separated subpaths under repo root (empty = whole repo)
+    required: false
+    default: ""
+  max-packages:
+    description: Max packages per scan
+    required: false
+    default: "200"
+  diff-mode:
+    description: Scan only PR-added lockfile packages (true on pull_request)
+    required: false
+    default: auto
+  audit-workflows:
+    description: Audit .github/workflows for CI hardening issues
+    required: false
+    default: "true"
+  block-workflow-critical:
+    description: Fail job on CRITICAL/HIGH workflow audit findings
+    required: false
+    default: "true"
+  heuristics:
+    description: Enable registry heuristics (release age, install scripts, typosquat)
+    required: false
+    default: "true"
+  minimum-release-age:
+    description: Warn on packages newer than N days
+    required: false
+    default: "7"
+
+outputs:
+  scan-id:
+    description: Scan UUID from rollup
+    value: ${{ steps.scan.outputs.scan_id }}
+  sarif-file:
+    description: Path to generated SARIF file
+    value: ${{ steps.scan.outputs.sarif_file }}
+  summary-file:
+    description: Path to PR summary markdown
+    value: ${{ steps.scan.outputs.summary_file }}
+  exit-code:
+    description: "0 pass, 1 warn-only findings, 2 blocked"
+    value: ${{ steps.scan.outputs.exit_code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@8f15245d393bf38ce5631d145276c65f7afc5f04 # v5.3.0
+      with:
+        python-version: "3.12"
+
+    - name: Install Chaintrap scan dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        pip install -q pyyaml
+        pip install -e "${{ github.action_path }}/vendor/chaintrap-static-scan" \
+                    -e "${{ github.action_path }}/vendor/chaintrap-ci"
+
+    - name: Run Chaintrap scan
+      id: scan
+      shell: bash
+      env:
+        CHAINTRAP_SUPABASE_URL: ${{ inputs.supabase-url }}
+        CHAINTRAP_IOC_READ_KEY: ${{ inputs.supabase-ioc-key }}
+        CHAINTRAP_ORG_ID: ${{ inputs.org-id }}
+        CHAINTRAP_FAIL_ON_IOC: ${{ inputs.fail-on-ioc }}
+        CHAINTRAP_FAIL_ON_MAL: ${{ inputs.fail-on-mal }}
+        CHAINTRAP_FAIL_ON_CVE: ${{ inputs.fail-on-cve }}
+        CHAINTRAP_ECOSYSTEMS: ${{ inputs.ecosystems }}
+        CHAINTRAP_PATHS: ${{ inputs.paths }}
+        CHAINTRAP_MAX_PACKAGES: ${{ inputs.max-packages }}
+        CHAINTRAP_DIFF_MODE: ${{ inputs.diff-mode }}
+        CHAINTRAP_AUDIT_WORKFLOWS: ${{ inputs.audit-workflows }}
+        CHAINTRAP_BLOCK_WORKFLOW_CRITICAL: ${{ inputs.block-workflow-critical }}
+        CHAINTRAP_HEURISTICS: ${{ inputs.heuristics }}
+        CHAINTRAP_MIN_RELEASE_AGE: ${{ inputs.minimum-release-age }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_REF_NAME: ${{ github.head_ref || github.ref_name }}
+        GITHUB_BASE_REF: ${{ github.base_ref }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        SARIF_FILE: ${{ runner.temp }}/chaintrap.sarif
+        SUMMARY_FILE: ${{ runner.temp }}/chaintrap-summary.md
+      run: |
+        set -uo pipefail
+        DIFF="${CHAINTRAP_DIFF_MODE}"
+        if [ "${DIFF}" = "auto" ]; then
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ -n "${GITHUB_BASE_REF:-}" ]; then
+            DIFF="true"
+          else
+            DIFF="false"
+          fi
+        fi
+        BASE_REF=""
+        if [ "${DIFF}" = "true" ]; then
+          git fetch --depth=1 origin "${GITHUB_BASE_REF}" 2>/dev/null || true
+          BASE_REF="origin/${GITHUB_BASE_REF}"
+        fi
+        EC=0
+        python "${{ github.action_path }}/scripts/chaintrap_gha_scan.py" \
+          --action-root "${{ github.action_path }}" \
+          --workspace "${{ github.workspace }}" \
+          --supabase-url "${CHAINTRAP_SUPABASE_URL}" \
+          --supabase-key "${CHAINTRAP_IOC_READ_KEY}" \
+          --org-id "${CHAINTRAP_ORG_ID}" \
+          --repo "${GITHUB_REPOSITORY}" \
+          --ref "${GITHUB_REF_NAME}" \
+          --fail-on-ioc "${CHAINTRAP_FAIL_ON_IOC}" \
+          --fail-on-mal "${CHAINTRAP_FAIL_ON_MAL}" \
+          --fail-on-cve "${CHAINTRAP_FAIL_ON_CVE}" \
+          --ecosystems "${CHAINTRAP_ECOSYSTEMS}" \
+          --paths "${CHAINTRAP_PATHS}" \
+          --max-packages "${CHAINTRAP_MAX_PACKAGES}" \
+          --diff-mode "${DIFF}" \
+          --base-ref "${BASE_REF}" \
+          --audit-workflows "${CHAINTRAP_AUDIT_WORKFLOWS}" \
+          --block-workflow-critical "${CHAINTRAP_BLOCK_WORKFLOW_CRITICAL}" \
+          --heuristics "${CHAINTRAP_HEURISTICS}" \
+          --minimum-release-age "${CHAINTRAP_MIN_RELEASE_AGE}" \
+          --sarif-output "${SARIF_FILE}" \
+          --summary-output "${SUMMARY_FILE}" \
+          --step-summary "${GITHUB_STEP_SUMMARY}" \
+          || EC=$?
+        SCAN_ID=""
+        if [ -f "${SUMMARY_FILE}" ]; then
+          SCAN_ID=$(grep -m1 '^\*\*Scan:\*\*' "${SUMMARY_FILE}" | sed 's/.*`\([^`]*\)`.*/\1/' || true)
+        fi
+        echo "scan_id=${SCAN_ID}" >> "$GITHUB_OUTPUT"
+        echo "sarif_file=${SARIF_FILE}" >> "$GITHUB_OUTPUT"
+        echo "summary_file=${SUMMARY_FILE}" >> "$GITHUB_OUTPUT"
+        echo "exit_code=${EC}" >> "$GITHUB_OUTPUT"
+        exit "${EC}"

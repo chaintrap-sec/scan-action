@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chaintrap-static-scan"
+version = "0.1.0"
+description = "OSV-only batch scanner for npm/PyPI (Chaintrap static inventory)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+chaintrap-static-scan = "chaintrap_static_scan.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,8 @@
+minimum_release_age_days: 7
+audit_workflows: true
+gates:
+  block_fresh_releases: false
+  block_install_scripts: false
+  block_typosquat: false
+ignore:
+  rules: []
