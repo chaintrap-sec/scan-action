@@ -38,6 +38,20 @@ def _compile_rules(rules: tuple[_RuleProto, ...]) -> list[tuple[re.Pattern[str],
     return [(re.compile(rule.pattern, re.IGNORECASE), rule) for rule in rules]
 
 
+_SKIP_PATH_SEGMENTS = frozenset(
+    {"tests", "test", "__tests__", "testing", "spec", "specs", "fixtures", "benchmark"}
+)
+
+
+def _skip_scan_path(rel: str) -> bool:
+    """Skip vendor test trees and minified bundles to reduce benign noise."""
+    norm = rel.replace("\\", "/").lower()
+    if norm.endswith(".min.js") or norm.endswith(".min.mjs"):
+        return True
+    parts = norm.split("/")
+    return any(seg in _SKIP_PATH_SEGMENTS for seg in parts)
+
+
 def _append_hit(
     findings: list[PatternHit],
     rule: _RuleProto,
@@ -98,6 +112,8 @@ def scan_tree(
         except OSError:
             continue
         rel = str(path.relative_to(root)).replace("\\", "/")
+        if _skip_scan_path(rel):
+            continue
         is_setup_py = eco == "pypi" and (rel == "setup.py" or rel.endswith("/setup.py"))
         for i, line in enumerate(text.splitlines(), start=1):
             matched: list[_RuleProto] = []

@@ -26,16 +26,46 @@ def _git_show_file(repo_root: Path, ref: str, rel_path: str) -> str | None:
         return None
 
 
-def _parse_lockfile_text(lock_name: str, text: str) -> list[dict]:
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=lock_name, delete=False, encoding="utf-8"
-    ) as tmp:
-        tmp.write(text)
-        tmp_path = Path(tmp.name)
+def _lockfile_exists_at_ref(repo_root: Path, ref: str, rel_path: str) -> bool:
     try:
+        result = subprocess.run(
+            ["git", "cat-file", "-e", f"{ref}:{rel_path}"],
+            cwd=str(repo_root),
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _lockfile_changed_between(
+    repo_root: Path, base_ref: str, head_ref: str, rel_path: str
+) -> bool:
+    """True when lockfile content differs between base and head (PR range)."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--quiet", f"{base_ref}...{head_ref}", "--", rel_path],
+            cwd=str(repo_root),
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+        if result.returncode == 0:
+            return False
+        if result.returncode == 1:
+            return True
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return True
+
+
+def _parse_lockfile_text(lock_name: str, text: str) -> list[dict]:
+    with tempfile.TemporaryDirectory(prefix="chaintrap_lock_") as td:
+        tmp_path = Path(td) / lock_name
+        tmp_path.write_text(text, encoding="utf-8")
         return _parse_lockfile(tmp_path)
-    finally:
-        tmp_path.unlink(missing_ok=True)
 
 
 def _packages_from_lockfile_at_ref(
@@ -76,6 +106,7 @@ def discover_added_packages(
     added: list[dict] = []
     seen: set[tuple[str, str]] = set()
     mode = "diff"
+    saw_new_lockfile = False
 
     if not head_locks:
         return [], "no-lockfiles"
@@ -84,25 +115,41 @@ def discover_added_packages(
         eco = _LOCKFILE_NAMES.get(lock_path.name)
         if not eco or eco not in wanted:
             continue
+
+        rel = lock_path.relative_to(root).as_posix()
+        if base_ref and not _lockfile_changed_between(root, base_ref, head_ref, rel):
+            continue
+
         head_rows = _parse_lockfile(lock_path)
         head_set = {
             (str(r.get("ecosystem") or ""), str(r.get("package_spec") or ""))
             for r in head_rows
         }
-        base_set = _packages_from_lockfile_at_ref(root, base_ref, lock_path)
-        if not base_set and base_ref:
-            # New lockfile or base ref unavailable — treat all head pins as added
-            delta = head_set
-            mode = "diff-new-lockfile"
-        else:
+
+        if base_ref and _lockfile_exists_at_ref(root, base_ref, rel):
+            base_set = _packages_from_lockfile_at_ref(root, base_ref, lock_path)
+            if not base_set and _git_show_file(root, base_ref, rel) is None:
+                continue
             delta = head_set - base_set
+        else:
+            delta = head_set
+            saw_new_lockfile = True
 
         for eco_key, spec in sorted(delta):
             key = (eco_key, spec.lower())
             if key in seen:
                 continue
             seen.add(key)
-            added.append({"ecosystem": eco_key, "package_spec": spec})
+            added.append(
+                {
+                    "ecosystem": eco_key,
+                    "package_spec": spec,
+                    "lockfile": rel,
+                }
+            )
+
+    if saw_new_lockfile:
+        mode = "diff-new-lockfile"
 
     deduped = _dedupe_items(added)
     if max_items > 0:
