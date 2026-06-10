@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from chaintrap_static_scan.npm_malware_rules import NPM_MALWARE_RULES, NpmMalwareRule
+from chaintrap_static_scan.npm_malware_rules import (
+    NPM_DROPPER_FILENAMES,
+    NPM_INSTALL_HOOKS,
+    NPM_MALWARE_RULES,
+    NpmMalwareRule,
+)
 from chaintrap_static_scan.pypi_malware_rules import (
     PYPI_MALWARE_RULES,
     SETUP_PY_INSTALL_HOOK_RULE,
@@ -72,6 +78,28 @@ def _append_hit(
     )
 
 
+def _scan_npm_package_json(path: Path, rel: str, compiled) -> list[PatternHit]:
+    """Inspect package.json install-hook command strings (Shai-Hulud preinstall dropper)."""
+    findings: list[PatternHit] = []
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+    except (OSError, ValueError):
+        return findings
+    if not isinstance(doc, dict):
+        return findings
+    scripts = doc.get("scripts")
+    if not isinstance(scripts, dict):
+        return findings
+    for hook in NPM_INSTALL_HOOKS:
+        cmd = scripts.get(hook)
+        if not isinstance(cmd, str) or not cmd.strip():
+            continue
+        for cre, rule in compiled:
+            if cre.search(cmd):
+                _append_hit(findings, rule, rel, 1, f"{hook}: {cmd}")
+    return findings
+
+
 def scan_tree(
     extract_root: Path,
     ecosystem: str,
@@ -98,6 +126,23 @@ def scan_tree(
     for path in root.rglob("*"):
         if not path.is_file():
             continue
+        rel_early = str(path.relative_to(root)).replace("\\", "/")
+        # Dropper filename is itself a high-signal IOC, even if oversized/obfuscated.
+        if eco == "npm" and path.name in NPM_DROPPER_FILENAMES and not _skip_scan_path(rel_early):
+            findings.append(
+                PatternHit(
+                    rule_id="CTC-TTP002",
+                    severity="CRITICAL",
+                    category="DROPPER",
+                    message=f"Shai-Hulud dropper filename present: {path.name}",
+                    file=rel_early,
+                    line=1,
+                    snippet=path.name,
+                )
+            )
+        # package.json: inspect install-hook command strings rather than skipping.
+        if eco == "npm" and path.name == "package.json" and not _skip_scan_path(rel_early):
+            findings.extend(_scan_npm_package_json(path, rel_early, compiled))
         if path.name in skip_names:
             continue
         if path.suffix.lower() not in suffixes:
