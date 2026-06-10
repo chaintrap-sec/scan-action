@@ -36,7 +36,12 @@ _SEV_RANK = {
 
 def _gate_summary(cfg: ScanConfig) -> str:
     mal = "block" if cfg.fail_on_mal else "off"
-    return f"ioc={cfg.fail_on_ioc}, mal={mal}, cve={cfg.fail_on_cve}, diff={cfg.diff_mode}"
+    err = "block" if cfg.fail_on_error else "warn"
+    content = "on" if cfg.content_scan_enabled else "off"
+    return (
+        f"ioc={cfg.fail_on_ioc}, mal={mal}, cve={cfg.fail_on_cve}, "
+        f"diff={cfg.diff_mode}, content={content}, errors={err}"
+    )
 
 
 def _item_summary(item: dict[str, Any]) -> dict[str, Any]:
@@ -151,7 +156,38 @@ def format_summary_markdown(
             lines.append(_summary_table_row(item))
         lines.append("")
 
-    if not blocked and not warned and not wf:
+    partial = status == "partial"
+    if partial:
+        lines.append("### Scan errors (partial)")
+        lines.append("")
+        lines.append(
+            "Some packages could not be fully checked (OSV/registry/content errors). "
+            "Results may be incomplete — review before merging."
+        )
+        lines.append("")
+
+    content_items = [
+        item
+        for item in items
+        if isinstance(item, dict)
+        and (_item_summary(item).get("content_findings") or _item_summary(item).get("osv_error"))
+    ]
+    if content_items:
+        lines.append("### Content / scan errors")
+        lines.append("")
+        for item in content_items:
+            spec = str(item.get("package_spec") or "")
+            summ = _item_summary(item)
+            if summ.get("osv_error"):
+                lines.append(f"- `{spec}`: OSV error — {summ.get('osv_error')}")
+            for hit in summ.get("content_findings") or []:
+                if isinstance(hit, dict):
+                    lines.append(
+                        f"- `{spec}`: `{hit.get('rule_id')}` {hit.get('file')}:{hit.get('line')} — {hit.get('message')}"
+                    )
+        lines.append("")
+
+    if not blocked and not warned and not wf and not partial:
         lines.append("No supply-chain or workflow findings above benign.")
         lines.append("")
 
@@ -190,6 +226,10 @@ def _merge_policy(cfg: ScanConfig, policy: ChaintrapPolicy, args: argparse.Names
     cfg.ignored_rules |= policy.ignored_rules
     if args.fail_on_cve == "none" and policy.fail_on_cve != "none":
         cfg.fail_on_cve = policy.fail_on_cve
+    if not cfg.fail_on_error and policy.fail_on_error:
+        cfg.fail_on_error = True
+    if cfg.content_scan_enabled and not policy.content_scan:
+        cfg.content_scan_enabled = False
     return cfg
 
 
@@ -217,6 +257,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--minimum-release-age", type=int, default=7)
     p.add_argument("--audit-workflows", default="true", choices=["true", "false"])
     p.add_argument("--block-workflow-critical", default="true", choices=["true", "false"])
+    p.add_argument("--fail-on-error", default="false", choices=["true", "false"])
+    p.add_argument("--content-scan", default="true", choices=["true", "false"])
     return p.parse_args(argv)
 
 
@@ -241,6 +283,8 @@ def run_scan(args: argparse.Namespace) -> int:
         base_ref=str(args.base_ref or os.environ.get("GITHUB_BASE_REF") or "").strip(),
         heuristics_enabled=str(args.heuristics).lower() == "true",
         minimum_release_age_days=int(args.minimum_release_age),
+        fail_on_error=str(args.fail_on_error).lower() == "true",
+        content_scan_enabled=str(args.content_scan).lower() == "true",
     )
     cfg = _merge_policy(cfg, policy, args)
 

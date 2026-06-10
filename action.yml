@@ -61,6 +61,14 @@ inputs:
     description: Warn on packages newer than N days
     required: false
     default: "7"
+  fail-on-error:
+    description: Fail job when OSV/registry/content scan errors (default warn-only)
+    required: false
+    default: "false"
+  content-scan:
+    description: Download and scan package contents on PR diff-added packages
+    required: false
+    default: "true"
 
 outputs:
   scan-id:
@@ -110,6 +118,8 @@ runs:
         CHAINTRAP_BLOCK_WORKFLOW_CRITICAL: ${{ inputs.block-workflow-critical }}
         CHAINTRAP_HEURISTICS: ${{ inputs.heuristics }}
         CHAINTRAP_MIN_RELEASE_AGE: ${{ inputs.minimum-release-age }}
+        CHAINTRAP_FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
+        CHAINTRAP_CONTENT_SCAN: ${{ inputs.content-scan }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_REF_NAME: ${{ github.head_ref || github.ref_name }}
         GITHUB_BASE_REF: ${{ github.base_ref }}
@@ -152,6 +162,8 @@ runs:
           --block-workflow-critical "${CHAINTRAP_BLOCK_WORKFLOW_CRITICAL}" \
           --heuristics "${CHAINTRAP_HEURISTICS}" \
           --minimum-release-age "${CHAINTRAP_MIN_RELEASE_AGE}" \
+          --fail-on-error "${CHAINTRAP_FAIL_ON_ERROR}" \
+          --content-scan "${CHAINTRAP_CONTENT_SCAN}" \
           --sarif-output "${SARIF_FILE}" \
           --summary-output "${SUMMARY_FILE}" \
           --step-summary "${GITHUB_STEP_SUMMARY}" \

@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import os
-import urllib.error
-import urllib.request
 from typing import Any
+
+from chaintrap_static_scan.http_utils import http_get_json
 
 _log = logging.getLogger(__name__)
 
@@ -89,22 +89,21 @@ def query_osv_querybatch(
             ]
         }
         body = json.dumps(body_obj).encode("utf-8")
-        req = urllib.request.Request(
+        data, err = http_get_json(
             OSV_QUERYBATCH_URL,
+            timeout=_timeout_sec(),
+            retries=3,
+            method="POST",
             data=body,
             headers={
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "chaintrap-static-scan/0.1",
+                "User-Agent": "chaintrap-static-scan/0.2",
             },
-            method="POST",
+            max_read=_MAX_READ,
         )
-        try:
-            with urllib.request.urlopen(req, timeout=_timeout_sec()) as resp:
-                raw = resp.read(_MAX_READ)
-            data = json.loads(raw.decode("utf-8"))
-        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, OSError) as exc:
-            _log.warning("OSV querybatch failed for chunk starting %s: %s", i, exc)
+        if err or not isinstance(data, dict):
+            _log.warning("OSV querybatch failed for chunk starting %s: %s", i, err)
             for _ in chunk:
                 results.append([])
             continue

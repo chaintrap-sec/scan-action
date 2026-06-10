@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from chaintrap_static_scan.heuristics import run_heuristics
+from chaintrap_static_scan.content_scan import scan_packages_content
+from chaintrap_static_scan.heuristics import run_heuristics_batch
 from chaintrap_static_scan.models import OsvFinding, PackageKey
 from chaintrap_static_scan.pipeline import scan_packages
 
@@ -42,6 +43,9 @@ class ScanConfig:
     block_install_scripts: bool = False
     block_typosquat: bool = False
     block_fresh_releases: bool = False
+    fail_on_error: bool = False
+    content_scan_enabled: bool = True
+    content_scan_max_packages: int = 30
     ignored_packages: set[str] = field(default_factory=set)
     ignored_rules: set[str] = field(default_factory=set)
 
@@ -57,6 +61,10 @@ def _heuristic_severity_to_rank(sev: str) -> int:
     return _SEV_RANK.get(str(sev or "LOW").upper(), 1)
 
 
+def _content_severity_rank(sev: str) -> int:
+    return _SEV_RANK.get(str(sev or "LOW").upper(), 1)
+
+
 def _summary_for_item(
     *,
     ecosystem: str,
@@ -64,11 +72,13 @@ def _summary_for_item(
     finding: OsvFinding,
     ioc_row: dict[str, Any] | None,
     heuristic_hits: list[dict[str, Any]] | None = None,
+    content_hits: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     mal = list(finding.malicious_ids or [])
     vuln = list(finding.vulnerable_ids or [])
     ioc_hit = ioc_row is not None
     heur = list(heuristic_hits or [])
+    content = list(content_hits or [])
 
     if finding.query_error:
         return {
@@ -78,6 +88,7 @@ def _summary_for_item(
             "osv_error": finding.query_error,
             "ioc_hit": False,
             "heuristic_findings": heur,
+            "content_findings": content,
         }
 
     malware_risk = "NONE"
@@ -94,6 +105,16 @@ def _summary_for_item(
     elif vuln:
         vulnerability_risk = "HIGH"
         verdict_level = "REVIEW"
+    elif content:
+        worst_c = max(content, key=lambda h: _content_severity_rank(str(h.get("severity"))))
+        cs = str(worst_c.get("severity") or "LOW").upper()
+        if cs in ("CRITICAL", "HIGH"):
+            verdict_level = "BLOCK"
+            malware_risk = cs if cs in _SEV_RANK else "CRITICAL"
+        elif cs == "MEDIUM":
+            verdict_level = "REVIEW"
+        else:
+            verdict_level = "WARN"
     elif heur:
         worst_h = max(heur, key=lambda h: _heuristic_severity_to_rank(str(h.get("severity"))))
         hs = str(worst_h.get("severity") or "LOW").upper()
@@ -112,6 +133,7 @@ def _summary_for_item(
         "malicious_osv_ids": mal,
         "vulnerable_osv_ids": vuln,
         "heuristic_findings": heur,
+        "content_findings": content,
     }
     if ioc_hit:
         summary["ioc_severity"] = str(ioc_row.get("severity") or "CRITICAL")
@@ -130,6 +152,9 @@ def _item_worst_severity(item: dict[str, Any]) -> str:
         if val is not None and str(val).strip() and str(val).strip() != "—":
             labels.append(str(val))
     for hit in summ.get("heuristic_findings") or []:
+        if isinstance(hit, dict):
+            labels.append(str(hit.get("severity") or "LOW"))
+    for hit in summ.get("content_findings") or []:
         if isinstance(hit, dict):
             labels.append(str(hit.get("severity") or "LOW"))
     best = "NONE"
@@ -151,6 +176,14 @@ def _item_worst_severity(item: dict[str, Any]) -> str:
             best_r = r
             best = u
     return best if best_r >= 0 else "UNKNOWN"
+
+
+def _should_block_content(hit: dict[str, Any], cfg: ScanConfig) -> bool:
+    rule = str(hit.get("rule_id") or "")
+    if rule in cfg.ignored_rules:
+        return False
+    sev = str(hit.get("severity") or "LOW").upper()
+    return sev in ("CRITICAL", "HIGH")
 
 
 def _should_block_heuristic(hit: dict[str, Any], cfg: ScanConfig) -> bool:
@@ -200,15 +233,24 @@ def evaluate_scan_rollup(
         elif summ.get("vulnerable_osv_ids") and rank >= cve_threshold and cve_threshold < 999:
             is_blocked = True
         else:
-            for hit in summ.get("heuristic_findings") or []:
-                if isinstance(hit, dict) and _should_block_heuristic(hit, cfg):
+            for hit in summ.get("content_findings") or []:
+                if isinstance(hit, dict) and _should_block_content(hit, cfg):
                     is_blocked = True
                     break
+            if not is_blocked:
+                for hit in summ.get("heuristic_findings") or []:
+                    if isinstance(hit, dict) and _should_block_heuristic(hit, cfg):
+                        is_blocked = True
+                        break
 
         if is_blocked:
             blocked.append(enriched)
         elif rank > 0:
             warned.append(enriched)
+
+    bundle_status = str(rollup.get("bundle_status") or "")
+    if cfg.fail_on_error and bundle_status == "partial":
+        return 2, blocked, warned
 
     if blocked:
         return 2, blocked, warned
@@ -275,26 +317,43 @@ def run_local_scan(
     if supabase_url and supabase_key and org_id:
         ioc_map = fetch_org_iocs(supabase_url, supabase_key, org_id)
 
+    heur_map: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    if cfg.heuristics_enabled:
+        pkg_tuples = [(r["ecosystem"], r["name"], r["version"]) for r in parsed_items]
+        heur_map = run_heuristics_batch(
+            pkg_tuples,
+            minimum_release_age_days=cfg.minimum_release_age_days,
+            data_dir=data_dir,
+        )
+
+    content_map: dict[tuple[str, str, str], dict[str, Any]] = {}
+    if cfg.content_scan_enabled and cfg.diff_mode:
+        pkg_tuples = [(r["ecosystem"], r["name"], r["version"]) for r in parsed_items]
+        content_map = scan_packages_content(
+            pkg_tuples,
+            max_packages=cfg.content_scan_max_packages,
+        )
+
     rollup_items: list[dict[str, Any]] = []
     any_err = False
     for row, pk in zip(parsed_items, keys):
         finding = osv_findings.get(pk) or OsvFinding(malicious_ids=[], vulnerable_ids=[], query_error="no result")
         lookup = ioc_lookup_key(row["ecosystem"], row["name"], row["version"])
         ioc_row = ioc_map.get(lookup)
-        heur: list[dict[str, Any]] = []
-        if cfg.heuristics_enabled:
-            heur = run_heuristics(
-                row["ecosystem"],
-                row["name"],
-                row["version"],
-                minimum_release_age_days=cfg.minimum_release_age_days,
-                data_dir=data_dir,
-            )
-            heur = [
-                h
-                for h in heur
-                if str(h.get("rule_id") or "") not in cfg.ignored_rules
-            ]
+        pkg_key = (row["ecosystem"], row["name"], row["version"])
+        heur = [
+            h
+            for h in heur_map.get(pkg_key, [])
+            if str(h.get("rule_id") or "") not in cfg.ignored_rules
+        ]
+        content_entry = content_map.get(pkg_key, {})
+        content_hits = [
+            h
+            for h in (content_entry.get("findings") or [])
+            if isinstance(h, dict) and str(h.get("rule_id") or "") not in cfg.ignored_rules
+        ]
+        if content_entry.get("error"):
+            any_err = True
         if finding.query_error:
             any_err = True
             status = "error"
@@ -311,13 +370,18 @@ def run_local_scan(
                     finding=finding,
                     ioc_row=ioc_row,
                     heuristic_hits=heur,
+                    content_hits=content_hits,
                 ),
             }
         )
 
+    scan_mode = f"runner-osv-ioc-{discovery_mode}"
+    if cfg.content_scan_enabled and cfg.diff_mode:
+        scan_mode += "-content"
+
     return {
         "schema_version": 1,
-        "scan_mode": f"runner-osv-ioc-{discovery_mode}",
+        "scan_mode": scan_mode,
         "bundle_id": str(uuid.uuid4()),
         "source_repo": repo,
         "source_ref": ref,

@@ -87,6 +87,8 @@ jobs:
 | Fresh release (<7 days) | Warn | Registry metadata |
 | npm install lifecycle scripts | Warn | Registry metadata |
 | Typosquat similarity | Warn | Heuristic |
+| Package content malware patterns (PR diff only) | **Block** (CRITICAL/HIGH) | Tarball static scan |
+| OSV/registry/content errors | Warn (configurable block) | Retry + `fail-on-error` |
 | `pull_request_target` / unpinned actions | **Block** (CRITICAL/HIGH) | Workflow audit |
 
 ## Zero secrets mode
@@ -111,6 +113,8 @@ audit_workflows: true
 gates:
   block_fresh_releases: false
   block_install_scripts: false
+  fail_on_error: false
+  content_scan: true
 ignore:
   packages:
     - left-pad@1.0.0
@@ -122,7 +126,8 @@ ignore:
 
 - Scans run **entirely on the GitHub runner**
 - Only public registry metadata + OSV API calls leave the runner
-- No repository source is uploaded to Chaintrap cloud in v1
+- On PRs, diff-added packages may be downloaded as tarballs/wheels for local static analysis (never uploaded)
+- No repository source is uploaded to Chaintrap cloud
 
 See [docs/PRIVACY.md](docs/PRIVACY.md).
 

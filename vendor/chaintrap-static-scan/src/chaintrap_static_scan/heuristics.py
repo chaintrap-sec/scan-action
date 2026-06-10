@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.request
+import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
+
+from chaintrap_static_scan.http_utils import http_get_json
 
 _DEFAULT_POPULAR = (
     "react",
@@ -45,6 +46,8 @@ _DEFAULT_POPULAR = (
     "cryptography",
 )
 
+_HEURISTIC_WORKERS = 8
+
 
 def _load_popular_names(data_dir: Path | None) -> list[str]:
     if data_dir:
@@ -58,15 +61,6 @@ def _load_popular_names(data_dir: Path | None) -> list[str]:
             if lines:
                 return lines
     return list(_DEFAULT_POPULAR)
-
-
-def _fetch_json(url: str, timeout: float = 20.0) -> dict[str, Any] | None:
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, TimeoutError):
-        return None
 
 
 def _parse_release_date(raw: str | None) -> datetime | None:
@@ -92,6 +86,59 @@ def _name_similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
 
+def _npm_version_url(name: str, version: str) -> str:
+    enc = urllib.parse.quote(name, safe="@/")
+    return f"https://registry.npmjs.org/{enc}/{version}"
+
+
+def _fetch_npm_version_meta(name: str, version: str) -> dict[str, Any] | None:
+    data, _err = http_get_json(_npm_version_url(name, version))
+    return data if isinstance(data, dict) else None
+
+
+def _release_age_from_npm_meta(
+    data: dict[str, Any],
+    *,
+    name: str,
+    version: str,
+    minimum_days: int,
+    now: datetime,
+) -> dict[str, Any] | None:
+    published = _parse_release_date(str(data.get("time") or data.get("published") or ""))
+    if not published and isinstance(data.get("time"), dict):
+        published = _parse_release_date(str(data["time"].get(version) or ""))
+    if not published:
+        return None
+    age_days = (now - published).total_seconds() / 86400.0
+    if age_days >= minimum_days:
+        return None
+    return {
+        "rule_id": "CTH-001",
+        "severity": "MEDIUM",
+        "message": f"{name}@{version} published {age_days:.1f} days ago (< {minimum_days}d)",
+        "age_days": round(age_days, 2),
+        "published_at": published.isoformat(),
+    }
+
+
+def _install_scripts_from_npm_meta(
+    data: dict[str, Any],
+    *,
+    name: str,
+    version: str,
+) -> dict[str, Any] | None:
+    scripts = data.get("scripts") if isinstance(data.get("scripts"), dict) else {}
+    risky = [k for k in ("preinstall", "postinstall", "prepare", "install") if k in scripts]
+    if not risky:
+        return None
+    return {
+        "rule_id": "CTH-002",
+        "severity": "MEDIUM",
+        "message": f"{name}@{version} has lifecycle scripts: {', '.join(risky)}",
+        "scripts": risky,
+    }
+
+
 def check_release_age(
     ecosystem: str,
     name: str,
@@ -99,20 +146,21 @@ def check_release_age(
     *,
     minimum_days: int = 7,
     now: datetime | None = None,
+    npm_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     eco = ecosystem.strip().lower()
     now = now or datetime.now(timezone.utc)
     published: datetime | None = None
 
     if eco == "npm":
-        enc = name.replace("/", "%2F")
-        data = _fetch_json(f"https://registry.npmjs.org/{enc}/{version}")
-        if data and isinstance(data, dict):
-            published = _parse_release_date(str(data.get("time") or data.get("published") or ""))
-            if not published and isinstance(data.get("time"), dict):
-                published = _parse_release_date(str(data["time"].get(version) or ""))
-    elif eco == "pypi":
-        data = _fetch_json(f"https://pypi.org/pypi/{name}/{version}/json")
+        data = npm_meta if npm_meta is not None else _fetch_npm_version_meta(name, version)
+        if data:
+            return _release_age_from_npm_meta(
+                data, name=name, version=version, minimum_days=minimum_days, now=now
+            )
+        return None
+    if eco == "pypi":
+        data, _err = http_get_json(f"https://pypi.org/pypi/{name}/{version}/json")
         if data and isinstance(data, dict):
             urls = data.get("urls") or []
             if isinstance(urls, list) and urls:
@@ -135,23 +183,19 @@ def check_release_age(
     }
 
 
-def check_install_scripts(ecosystem: str, name: str, version: str) -> dict[str, Any] | None:
+def check_install_scripts(
+    ecosystem: str,
+    name: str,
+    version: str,
+    *,
+    npm_meta: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     if ecosystem.strip().lower() != "npm":
         return None
-    enc = name.replace("/", "%2F")
-    data = _fetch_json(f"https://registry.npmjs.org/{enc}/{version}")
-    if not data or not isinstance(data, dict):
+    data = npm_meta if npm_meta is not None else _fetch_npm_version_meta(name, version)
+    if not data:
         return None
-    scripts = data.get("scripts") if isinstance(data.get("scripts"), dict) else {}
-    risky = [k for k in ("preinstall", "postinstall", "prepare", "install") if k in scripts]
-    if not risky:
-        return None
-    return {
-        "rule_id": "CTH-002",
-        "severity": "MEDIUM",
-        "message": f"{name}@{version} has lifecycle scripts: {', '.join(risky)}",
-        "scripts": risky,
-    }
+    return _install_scripts_from_npm_meta(data, name=name, version=version)
 
 
 def check_typosquat(
@@ -197,16 +241,25 @@ def run_heuristics(
     check_scripts: bool = True,
     check_typo: bool = True,
     data_dir: Path | None = None,
+    npm_meta: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
+    eco = ecosystem.strip().lower()
+    if eco == "npm" and npm_meta is None and (check_age or check_scripts):
+        npm_meta = _fetch_npm_version_meta(name, version)
+
     if check_age and minimum_release_age_days > 0:
         hit = check_release_age(
-            ecosystem, name, version, minimum_days=minimum_release_age_days
+            ecosystem,
+            name,
+            version,
+            minimum_days=minimum_release_age_days,
+            npm_meta=npm_meta,
         )
         if hit:
             findings.append(hit)
     if check_scripts:
-        hit = check_install_scripts(ecosystem, name, version)
+        hit = check_install_scripts(ecosystem, name, version, npm_meta=npm_meta)
         if hit:
             findings.append(hit)
     if check_typo:
@@ -214,3 +267,44 @@ def run_heuristics(
         if hit:
             findings.append(hit)
     return findings
+
+
+def run_heuristics_batch(
+    packages: list[tuple[str, str, str]],
+    *,
+    minimum_release_age_days: int = 7,
+    data_dir: Path | None = None,
+    max_workers: int = _HEURISTIC_WORKERS,
+) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
+    """Run heuristics for many packages in parallel. Key: (ecosystem, name, version)."""
+    if not packages:
+        return {}
+
+    npm_meta_cache: dict[tuple[str, str], dict[str, Any] | None] = {}
+
+    def _one(pkg: tuple[str, str, str]) -> tuple[tuple[str, str, str], list[dict[str, Any]]]:
+        eco, name, ver = pkg
+        npm_meta = None
+        if eco == "npm":
+            key = (name, ver)
+            if key not in npm_meta_cache:
+                npm_meta_cache[key] = _fetch_npm_version_meta(name, ver)
+            npm_meta = npm_meta_cache[key]
+        hits = run_heuristics(
+            eco,
+            name,
+            ver,
+            minimum_release_age_days=minimum_release_age_days,
+            data_dir=data_dir,
+            npm_meta=npm_meta,
+        )
+        return pkg, hits
+
+    out: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    workers = min(max_workers, max(1, len(packages)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_one, pkg) for pkg in packages]
+        for fut in as_completed(futures):
+            key, hits = fut.result()
+            out[key] = hits
+    return out

@@ -24,6 +24,8 @@ class ChaintrapPolicy:
     ignored_packages: set[str] = field(default_factory=set)
     ignored_rules: set[str] = field(default_factory=set)
     audit_workflows: bool = True
+    fail_on_error: bool = False
+    content_scan: bool = True
 
 
 def _as_set(raw: Any) -> set[str]:
@@ -67,4 +69,6 @@ def load_policy(workspace: Path) -> ChaintrapPolicy:
         ignored_packages=_as_set(ignore.get("packages")),
         ignored_rules=_as_set(ignore.get("rules")),
         audit_workflows=bool(raw.get("audit_workflows", True)),
+        fail_on_error=bool(raw.get("fail_on_error", gates.get("fail_on_error", False))),
+        content_scan=bool(raw.get("content_scan", gates.get("content_scan", True))),
     )

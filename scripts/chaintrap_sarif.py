@@ -141,6 +141,54 @@ def rollup_json_to_sarif(rollup: dict[str, Any]) -> dict[str, Any]:
                 }
             )
 
+        for hit in summ.get("content_findings") or []:
+            if not isinstance(hit, dict):
+                continue
+            rule_id = str(hit.get("rule_id") or "chaintrap/content")
+            file_uri = str(hit.get("file") or lockfile or spec)
+            hit_line = int(hit.get("line") or 1)
+            _ensure_rule(rules_seen, rule_id, rule_id, str(hit.get("message") or "Content malware pattern"))
+            results.append(
+                {
+                    "ruleId": rule_id,
+                    "level": _sarif_level(str(hit.get("severity") or "HIGH")),
+                    "message": {"text": f"{spec}: {hit.get('message') or rule_id}"},
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {"uri": file_uri},
+                                "region": {"startLine": hit_line},
+                            }
+                        }
+                    ],
+                    "properties": {
+                        "ecosystem": eco,
+                        "package_spec": spec,
+                        "snippet": str(hit.get("snippet") or "")[:240],
+                    },
+                }
+            )
+
+        if summ.get("osv_error"):
+            rule_id = "chaintrap/osv-error"
+            _ensure_rule(rules_seen, rule_id, "OSV query error", "Registry/OSV lookup failed")
+            results.append(
+                {
+                    "ruleId": rule_id,
+                    "level": "warning",
+                    "message": {"text": f"{spec}: {summ.get('osv_error')}"},
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {"uri": lockfile or spec},
+                                "region": {"startLine": line},
+                            }
+                        }
+                    ],
+                    "properties": {"ecosystem": eco, "package_spec": spec},
+                }
+            )
+
         for vuln_id in summ.get("vulnerable_osv_ids") or []:
             rule_id = "chaintrap/cve"
             _ensure_rule(rules_seen, rule_id, "Known vulnerability", "OSV CVE/GHSA advisory")
