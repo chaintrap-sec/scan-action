@@ -25,7 +25,7 @@ def test_oversized_obfuscated_dropper_detected(tmp_path):
     body = (pad * 25_000) + "\n"
     (pkg / "index.js").write_text(header + body, encoding="utf-8")
     rules = {h.rule_id for h in scan_tree(pkg, "npm")}
-    assert "CTC-IOC002" in rules or "CTC-OBF011" in rules
+    assert "CTC-OBF011" in rules
     assert any(r.startswith("CTC-OBF") for r in rules)
 
 

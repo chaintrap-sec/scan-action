@@ -17,6 +17,7 @@ from chaintrap_static_scan.npm_malware_rules import (
     NPM_OVERSIZE_CATEGORIES,
     NpmMalwareRule,
 )
+from chaintrap_static_scan.obfuscation_analyzer import analyze_js_structure
 from chaintrap_static_scan.pypi_malware_rules import (
     PYPI_MALWARE_RULES,
     SETUP_PY_INSTALL_HOOK_RULE,
@@ -59,6 +60,7 @@ _BINDING_GYP_SHELL = re.compile(
     r"\b(?:curl|wget|powershell|cmd\.exe|bash|sh)\b|execSync|spawnSync",
     re.IGNORECASE,
 )
+_BINDING_GYP_SUBSTITUTION = re.compile(r"<!@?\([^)]{0,300}\)", re.IGNORECASE)
 
 
 def _skip_scan_path(rel: str) -> bool:
@@ -150,7 +152,7 @@ def _scan_npm_package_json(path: Path, rel: str, compiled) -> list[PatternHit]:
                         rule_id="CTC-TTP010",
                         severity="CRITICAL",
                         category="INSTALL_HOOK",
-                        message="package.json gypfile:true with risky install script (Phantom Gyp pattern)",
+                        message="Marks package as native build and combines it with install-time shell execution",
                         file=rel,
                         line=1,
                         snippet=f"gypfile + {hook}: {cmd[:120]}",
@@ -165,20 +167,35 @@ def _scan_binding_gyp(path: Path, rel: str, compiled) -> list[PatternHit]:
         text = path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return []
-    if not _BINDING_GYP_SHELL.search(text):
+    has_substitution = bool(_BINDING_GYP_SUBSTITUTION.search(text))
+    has_shell = bool(_BINDING_GYP_SHELL.search(text))
+    if not (has_substitution or has_shell):
         return []
     findings = _scan_lines(text, rel, compiled)
-    findings.append(
-        PatternHit(
-            rule_id="CTC-TTP010",
-            severity="CRITICAL",
-            category="INSTALL_HOOK",
-            message="binding.gyp contains shell/download/exec (Phantom Gyp install hook)",
-            file=rel,
-            line=1,
-            snippet=text.strip()[:240],
+    if has_substitution:
+        findings.append(
+            PatternHit(
+                rule_id="CTC-TTP010",
+                severity="CRITICAL",
+                category="INSTALL_HOOK",
+                message="Uses gyp command substitution to execute shell logic during package install",
+                file=rel,
+                line=1,
+                snippet=text.strip()[:240],
+            )
         )
-    )
+    elif has_shell:
+        findings.append(
+            PatternHit(
+                rule_id="CTC-TTP010",
+                severity="CRITICAL",
+                category="INSTALL_HOOK",
+                message="Runs shell or downloader commands in native-build install path",
+                file=rel,
+                line=1,
+                snippet=text.strip()[:240],
+            )
+        )
     return findings
 
 
@@ -230,7 +247,7 @@ def scan_tree(
                     rule_id="CTC-TTP002",
                     severity="CRITICAL",
                     category="DROPPER",
-                    message=f"Shai-Hulud dropper filename present: {path.name}",
+                    message=f"Install artifact filename strongly indicates staged runtime payload: {path.name}",
                     file=rel_early,
                     line=1,
                     snippet=path.name,
@@ -267,6 +284,27 @@ def scan_tree(
                             categories=NPM_OVERSIZE_CATEGORIES,
                         )
                     )
+                    structural = analyze_js_structure(prefix_text)
+                    if structural:
+                        structural_ids = {h["rule_id"] for h in structural}
+                        composite_gate = len(structural_ids) >= 2
+                        for hit in structural:
+                            if (
+                                hit["rule_id"] in {"CTC-OBF030", "CTC-OBF031"}
+                                and not composite_gate
+                            ):
+                                continue
+                            findings.append(
+                                PatternHit(
+                                    rule_id=hit["rule_id"],
+                                    severity=hit["severity"],
+                                    category=hit["category"],
+                                    message=hit["message"],
+                                    file=rel_early,
+                                    line=1,
+                                    snippet=prefix_text.strip()[:240],
+                                )
+                            )
                     if size >= _ENTROPY_MIN_SIZE:
                         ent = _shannon_entropy(prefix)
                         if ent >= _ENTROPY_THRESHOLD:
@@ -292,6 +330,28 @@ def scan_tree(
                 setup_exec_eval=setup_exec_eval,
             )
         )
+        if eco == "npm" and path.suffix.lower() in (".js", ".cjs", ".mjs"):
+            structural = analyze_js_structure(text)
+            if structural:
+                structural_ids = {h["rule_id"] for h in structural}
+                composite_gate = len(structural_ids) >= 2
+                for hit in structural:
+                    if (
+                        hit["rule_id"] in {"CTC-OBF030", "CTC-OBF031"}
+                        and not composite_gate
+                    ):
+                        continue
+                    findings.append(
+                        PatternHit(
+                            rule_id=hit["rule_id"],
+                            severity=hit["severity"],
+                            category=hit["category"],
+                            message=hit["message"],
+                            file=rel,
+                            line=1,
+                            snippet=text.strip()[:240],
+                        )
+                    )
     return findings
 
 

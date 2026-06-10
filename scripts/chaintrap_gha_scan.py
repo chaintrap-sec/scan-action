@@ -183,7 +183,7 @@ def format_summary_markdown(
             for hit in summ.get("content_findings") or []:
                 if isinstance(hit, dict):
                     lines.append(
-                        f"- `{spec}`: `{hit.get('rule_id')}` {hit.get('file')}:{hit.get('line')} — {hit.get('message')}"
+                        f"- `{spec}`: `{hit.get('rule_id')}` — {hit.get('message')}"
                     )
         lines.append("")
 

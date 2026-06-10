@@ -19,10 +19,6 @@ _KNOWN_COMPROMISED_ACTIONS: dict[str, str] = {
     "tj-actions/eslint-changed-files": "Same maintainer as the tj-actions compromise; verify pin",
 }
 
-_MEGALODON_C2 = re.compile(r"216\.126\.225\.129")
-_MEGALODON_WF_NAMES = re.compile(r"\b(?:SysDiag|Optimize-Build)\b")
-
-
 def _load_yaml(path: Path) -> Any:
     if yaml is None:
         raise RuntimeError("PyYAML required for workflow audit (pip install pyyaml)")
@@ -34,6 +30,21 @@ def _line_for_pattern(text: str, pattern: str) -> int:
         if pattern in line:
             return idx
     return 1
+
+
+def _iter_run_blocks(text: str) -> list[tuple[int, str]]:
+    out: list[tuple[int, str]] = []
+    for match in re.finditer(r"run:\s*\|?\s*\n([\s\S]*?)(?=\n\s{2}\w|\Z)", text):
+        line = text[: match.start()].count("\n") + 1
+        out.append((line, match.group(1)))
+    for i, line in enumerate(text.splitlines(), start=1):
+        m = re.search(r"run:\s*([^\n#]+)$", line)
+        if not m:
+            continue
+        cmd = m.group(1).strip()
+        if cmd and cmd != "|" and not cmd.startswith("${{"):
+            out.append((i, cmd))
+    return out
 
 
 def audit_workflow_file(path: Path) -> list[dict[str, Any]]:
@@ -137,10 +148,8 @@ def _audit_file(path: Path) -> list[dict[str, Any]]:
                         }
                     )
 
-    for match in re.finditer(r"run:\s*\|?\s*\n([\s\S]*?)(?=\n\s{2}\w|\Z)", text):
-        block = match.group(1)
+    for line, block in _iter_run_blocks(text):
         if re.search(r"\$\{\{\s*secrets\.", block):
-            line = text[: match.start()].count("\n") + 1
             findings.append(
                 {
                     "rule_id": "CTW-005",
@@ -170,7 +179,7 @@ def _audit_file(path: Path) -> list[dict[str, Any]]:
             {
                 "rule_id": "CTW-007",
                 "severity": "HIGH",
-                "message": "Workflow triggers on discussion events — uncommon; Shai-Hulud persistence vector",
+                    "message": "Workflow triggers on discussion events, which can execute untrusted user input paths",
                 "file": rel,
                 "line": _line_for_pattern(text, "discussion"),
             }
@@ -186,15 +195,13 @@ def _audit_file(path: Path) -> list[dict[str, Any]]:
             }
         )
 
-    for match in re.finditer(r"run:\s*\|?\s*\n([\s\S]*?)(?=\n\s{2}\w|\Z)", text):
-        block = match.group(1)
+    for line, block in _iter_run_blocks(text):
         has_net = re.search(r"\b(curl|wget|Invoke-WebRequest|nc)\b", block)
         has_secret = re.search(
             r"\$\{\{\s*secrets\.|\bGITHUB_TOKEN\b|printenv|\benv\s*\|", block
         )
         has_external = re.search(r"https?://(?!(?:[^\s/]*\.)?github\.com)", block)
         if has_net and has_secret and has_external:
-            line = text[: match.start()].count("\n") + 1
             findings.append(
                 {
                     "rule_id": "CTW-008",
@@ -220,36 +227,36 @@ def _audit_file(path: Path) -> list[dict[str, Any]]:
                 }
             )
 
-    # CTW-010: Megalodon C2 / workflow signatures
-    if _MEGALODON_C2.search(text):
-        findings.append(
-            {
-                "rule_id": "CTW-010",
-                "severity": "CRITICAL",
-                "message": "Known Megalodon C2 host (216.126.225.129) in workflow",
-                "file": rel,
-                "line": _line_for_pattern(text, "216.126.225.129"),
-            }
+    # CTW-010: behavioral remote payload execution patterns in workflows
+    perms = doc.get("permissions") if isinstance(doc, dict) else None
+    id_write = isinstance(perms, dict) and perms.get("id-token") == "write"
+    actions_read = isinstance(perms, dict) and perms.get("actions") == "read"
+    for line, block in _iter_run_blocks(text):
+        has_shell_pipe = bool(
+            re.search(r"\b(?:curl|wget)\b[^\n|&;]*\|\s*(?:ba)?sh\b", block, re.I)
+            or (
+                re.search(r"base64\s+-d", block, re.I)
+                and re.search(r"\|\s*(?:ba)?sh\b", block, re.I)
+            )
         )
-    if _MEGALODON_WF_NAMES.search(text):
-        findings.append(
-            {
-                "rule_id": "CTW-010",
-                "severity": "CRITICAL",
-                "message": "Known Megalodon workflow name (SysDiag / Optimize-Build)",
-                "file": rel,
-                "line": _line_for_pattern(text, "SysDiag") if "SysDiag" in text else 1,
-            }
-        )
-    for match in re.finditer(r"run:\s*\|?\s*\n([\s\S]*?)(?=\n\s{2}\w|\Z)", text):
-        block = match.group(1)
-        if re.search(r"base64\s+-d", block, re.I) and re.search(r"\|\s*(?:ba)?sh\b", block):
-            line = text[: match.start()].count("\n") + 1
+        has_raw_ip_target = bool(re.search(r"https?://\d{1,3}(?:\.\d{1,3}){3}", block))
+        has_secrets = bool(re.search(r"\$\{\{\s*secrets\.|\bGITHUB_TOKEN\b|printenv|\benv\s*\|", block))
+        if has_shell_pipe:
+            findings.append(
+                {
+                    "rule_id": "CTW-010",
+                    "severity": "CRITICAL",
+                    "message": "Workflow downloads or decodes remote content and pipes it directly into a shell",
+                    "file": rel,
+                    "line": line,
+                }
+            )
+        elif has_raw_ip_target and (has_secrets or id_write or actions_read):
             findings.append(
                 {
                     "rule_id": "CTW-010",
                     "severity": "HIGH",
-                    "message": "Base64-decoded payload piped to shell in workflow run step",
+                    "message": "Workflow sends network traffic to raw IP destinations while handling credentials or elevated token scopes",
                     "file": rel,
                     "line": line,
                 }

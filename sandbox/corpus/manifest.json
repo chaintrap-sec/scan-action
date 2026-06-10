@@ -18,8 +18,8 @@
       "name": "@sandbox/miasma-dropper",
       "version": "1.0.0",
       "benign": false,
-      "expected_rules": ["CTC-IOC002", "CTC-OBF011"],
-      "note": "Miasma 4MB+ ROT obfuscated dropper"
+      "expected_rules": ["CTC-OBF011", "CTC-OBF017"],
+      "note": "Large ROT/eval obfuscated dropper"
     },
     {
       "id": "miasma-phantom-gyp",
@@ -61,6 +61,38 @@
       "expected_rules": [],
       "forbidden_rules": ["CTC-TTP", "CTC-OBF020", "CTC-WF", "CTC-KB"],
       "note": "Benign npm package control"
+    },
+    {
+      "id": "obf-string-array",
+      "kind": "package",
+      "ecosystem": "npm",
+      "name": "@sandbox/obf-string-array",
+      "version": "1.0.0",
+      "benign": false,
+      "expected_rules": ["CTC-OBF030", "CTC-OBF031"],
+      "note": "String-array rotation + decode-to-execute structure"
+    },
+    {
+      "id": "benign-native-addon",
+      "kind": "package",
+      "ecosystem": "npm",
+      "name": "@sandbox/benign-native-addon",
+      "version": "1.0.0",
+      "benign": true,
+      "expected_rules": [],
+      "forbidden_rules": ["CTC-TTP010", "CTC-OBF03"],
+      "note": "Legitimate binding.gyp native addon control"
+    },
+    {
+      "id": "benign-fromcharcode",
+      "kind": "package",
+      "ecosystem": "npm",
+      "name": "@sandbox/benign-fromcharcode",
+      "version": "1.0.0",
+      "benign": true,
+      "expected_rules": [],
+      "forbidden_rules": ["CTC-OBF03", "CTC-OBF020", "CTC-TTP"],
+      "note": "Legitimate String.fromCharCode helper control"
     },
     {
       "id": "known-bad-nx",
