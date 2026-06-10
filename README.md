@@ -2,7 +2,7 @@
 
 > **Install once. Every PR/commit scans dependencies for malware and flags risky CI workflows.**
 
-Runner-local supply chain security for **npm** and **PyPI** lockfiles. No source code leaves your GitHub runner.
+Runner-local supply chain security for **npm** and **PyPI** lockfiles. No source code leaves the GitHub runner.
 
 ## 60-second install
 
@@ -82,7 +82,7 @@ jobs:
 | Signal | Default |
 |--------|---------|
 | Known malicious packages | **Block** |
-| Your organization's private threat indicators (optional) | **Block** |
+| Private threat indicators (optional) | **Block** |
 | Known vulnerabilities (CVE/GHSA) | Warn |
 | Fresh release (<7 days) | Warn |
 | npm install lifecycle scripts | Warn |
@@ -95,7 +95,7 @@ jobs:
 
 Works with **no secrets and no setup** — known malicious npm/PyPI packages are blocked out of the box.
 
-Teams with a private threat-intelligence feed can connect it via action inputs — see [docs/IOC_PARTNER_ONBOARDING.md](docs/IOC_PARTNER_ONBOARDING.md).
+Optional private threat-intel feed: [docs/IOC_PARTNER_ONBOARDING.md](docs/IOC_PARTNER_ONBOARDING.md).
 
 ## Repo policy (`.chaintrap.yml`)
 
@@ -116,10 +116,10 @@ ignore:
 
 ## Privacy
 
-- Scans run **entirely on your GitHub runner**
+- Scans run **entirely on the GitHub runner**
 - Only package names and versions are checked against public vulnerability databases and registries
 - On PRs, newly added packages may be downloaded to the runner for local static analysis — nothing is uploaded
-- Your source code never leaves the runner
+- Source code never leaves the runner
 
 See [docs/PRIVACY.md](docs/PRIVACY.md).
 
@@ -129,5 +129,5 @@ See [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## Docs
 
-- [Onboarding guide](docs/DESIGN_PARTNER_ONBOARDING.md)
-- [Private threat intel setup](docs/IOC_PARTNER_ONBOARDING.md)
+- [Getting started](docs/DESIGN_PARTNER_ONBOARDING.md)
+- [Private threat intel](docs/IOC_PARTNER_ONBOARDING.md)
