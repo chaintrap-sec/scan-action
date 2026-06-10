@@ -42,10 +42,8 @@ Set `app.org_id` via PostgREST header or use filtered view per partner.
 
 Shared read-only rows with `org_id = 'org-community'` for keyless OSV+community tier.
 
-## Rate limits
+## Request volume
 
-- OSV batch: one querybatch per job (already batched)
-- Supabase: one GET per job; cache on runner within job only
+- OSV: one batched query per job
+- IOC store: one GET per job; cached on the runner within the job only
 - Registry heuristics: per added package in diff mode
-
-Recommend Supabase **read replica** or edge cache if partner count exceeds 10 concurrent CI jobs.

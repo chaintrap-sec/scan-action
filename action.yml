@@ -96,8 +96,9 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        pip install -q pyyaml
-        pip install -e "${{ github.action_path }}/vendor/chaintrap-static-scan" \
+        pip install -q --require-hashes -r "${{ github.action_path }}/requirements-runtime.txt"
+        pip install -q --no-deps \
+                    -e "${{ github.action_path }}/vendor/chaintrap-static-scan" \
                     -e "${{ github.action_path }}/vendor/chaintrap-ci"
 
     - name: Run Chaintrap scan

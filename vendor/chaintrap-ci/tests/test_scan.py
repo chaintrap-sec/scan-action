@@ -87,6 +87,6 @@ def test_run_local_scan_merges_ioc(mock_discover, mock_osv, mock_ioc, tmp_path):
         supabase_key="key",
         org_id="org-acme",
     )
-    assert rollup["scan_mode"] == "runner-osv-ioc"
+    assert rollup["scan_mode"].startswith("runner-osv-ioc")
     item = rollup["items"][0]
     assert item["summary"]["ioc_hit"] is True

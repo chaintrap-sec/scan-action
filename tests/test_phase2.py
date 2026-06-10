@@ -59,6 +59,115 @@ def test_safe_extract_tar_rejects_traversal():
             dest.rmdir()
 
 
+def test_safe_extract_tar_rejects_symlink_member():
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+        link = tarfile.TarInfo(name="pkg/link")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "/etc/passwd"
+        tf.addfile(link)
+    dest = Path(__file__).parent / "_tmp_tar_sym"
+    dest.mkdir(exist_ok=True)
+    try:
+        with pytest.raises(ValueError, match="unsafe link"):
+            safe_extract_tar(buf.getvalue(), dest)
+    finally:
+        import shutil
+
+        shutil.rmtree(dest, ignore_errors=True)
+
+
+def test_safe_extract_tar_rejects_hardlink_member():
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+        link = tarfile.TarInfo(name="pkg/hard")
+        link.type = tarfile.LNKTYPE
+        link.linkname = "../../outside"
+        tf.addfile(link)
+    dest = Path(__file__).parent / "_tmp_tar_hard"
+    dest.mkdir(exist_ok=True)
+    try:
+        with pytest.raises(ValueError, match="unsafe link"):
+            safe_extract_tar(buf.getvalue(), dest)
+    finally:
+        import shutil
+
+        shutil.rmtree(dest, ignore_errors=True)
+
+
+def test_safe_extract_tar_rejects_decompression_bomb():
+    buf = io.BytesIO()
+    payload = b"A" * 1024
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+        info = tarfile.TarInfo(name="pkg/big.bin")
+        info.size = len(payload)
+        tf.addfile(info, io.BytesIO(payload))
+    dest = Path(__file__).parent / "_tmp_tar_bomb"
+    dest.mkdir(exist_ok=True)
+    try:
+        with pytest.raises(ValueError, match="decompression bomb"):
+            safe_extract_tar(buf.getvalue(), dest, max_total_bytes=512)
+    finally:
+        import shutil
+
+        shutil.rmtree(dest, ignore_errors=True)
+
+
+def test_safe_extract_tar_rejects_file_count_flood():
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tf:
+        for i in range(5):
+            info = tarfile.TarInfo(name=f"pkg/f{i}.txt")
+            info.size = 1
+            tf.addfile(info, io.BytesIO(b"x"))
+    dest = Path(__file__).parent / "_tmp_tar_count"
+    dest.mkdir(exist_ok=True)
+    try:
+        with pytest.raises(ValueError, match="file count"):
+            safe_extract_tar(buf.getvalue(), dest, max_files=3)
+    finally:
+        import shutil
+
+        shutil.rmtree(dest, ignore_errors=True)
+
+
+def test_safe_extract_zip_rejects_decompression_bomb():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("pkg/big.bin", "A" * 4096)
+    dest = Path(__file__).parent / "_tmp_zip_bomb"
+    dest.mkdir(exist_ok=True)
+    try:
+        with pytest.raises(ValueError, match="decompression bomb"):
+            safe_extract_zip(buf.getvalue(), dest, max_total_bytes=1024)
+    finally:
+        import shutil
+
+        shutil.rmtree(dest, ignore_errors=True)
+
+
+def test_safe_extract_zip_rejects_traversal():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("../evil.txt", "evil")
+    dest = Path(__file__).parent / "_tmp_zip_trav"
+    dest.mkdir(exist_ok=True)
+    try:
+        with pytest.raises(ValueError, match="unsafe"):
+            safe_extract_zip(buf.getvalue(), dest)
+    finally:
+        import shutil
+
+        shutil.rmtree(dest, ignore_errors=True)
+
+
+def test_ioc_client_rejects_http_url():
+    from chaintrap_ci.ioc_client import fetch_org_iocs
+
+    with pytest.raises(RuntimeError, match="https"):
+        fetch_org_iocs("http://insecure.example", "key", "org-x")
+
+
 def test_safe_extract_zip_ok():
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:

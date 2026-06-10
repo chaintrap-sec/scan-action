@@ -127,7 +127,14 @@ See [docs/PRIVACY.md](docs/PRIVACY.md).
 
 `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `uv.lock`, `poetry.lock`, `Pipfile.lock`, `requirements.txt` (pinned `==` only)
 
+## Scope & limits
+
+- Packages are matched by **exact name and version** from your lockfiles — unpinned `requirements.txt` entries (ranges, no `==`) are not scanned
+- Transitive dependencies are covered **only when they appear in a lockfile** (true for `package-lock.json`/`pnpm-lock.yaml`/`poetry.lock`/`uv.lock`; not for a bare `requirements.txt`)
+- Deep code analysis of package contents runs on **packages newly added in a PR**, not the whole existing tree
+- A clean scan reduces risk; it is not a guarantee a package is safe
+
 ## Docs
 
-- [Getting started](docs/DESIGN_PARTNER_ONBOARDING.md)
+- [Privacy](docs/PRIVACY.md)
 - [Private threat intel](docs/IOC_PARTNER_ONBOARDING.md)

@@ -26,6 +26,8 @@ def fetch_org_iocs(
     org = (org_id or "").strip()
     if not base or not key or not org:
         return {}
+    if not base.lower().startswith("https://"):
+        raise RuntimeError("IOC endpoint must use https://")
 
     params = urllib.parse.urlencode(
         {

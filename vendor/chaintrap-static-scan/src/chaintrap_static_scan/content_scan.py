@@ -16,32 +16,98 @@ from chaintrap_static_scan.pattern_scanner import hits_to_dicts, scan_tree
 
 _log = logging.getLogger(__name__)
 
-_DEFAULT_MAX_BYTES = 10_485_760  # 10 MB
+_DEFAULT_MAX_BYTES = 10_485_760  # 10 MB compressed download cap
 _DEFAULT_MAX_PACKAGES = 30
+_MAX_EXTRACTED_BYTES = 209_715_200  # 200 MB total uncompressed cap (decompression bomb guard)
+_MAX_EXTRACTED_FILES = 20_000
 
 
-def _is_safe_tar_member(name: str) -> bool:
+def _is_safe_member_path(name: str) -> bool:
+    if not name:
+        return False
     p = Path(name)
     if p.is_absolute():
+        return False
+    # Reject drive-absolute / UNC on Windows-style names too.
+    norm = name.replace("\\", "/")
+    if norm.startswith("/") or ":" in norm.split("/", 1)[0]:
         return False
     return ".." not in p.parts
 
 
-def safe_extract_tar(data: bytes, dest: Path) -> None:
+def _within_dest(dest: Path, target: Path) -> bool:
+    try:
+        target.resolve().relative_to(dest.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def safe_extract_tar(
+    data: bytes,
+    dest: Path,
+    *,
+    max_total_bytes: int = _MAX_EXTRACTED_BYTES,
+    max_files: int = _MAX_EXTRACTED_FILES,
+) -> None:
+    dest_resolved = dest.resolve()
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tf:
-        for member in tf.getmembers():
-            if not _is_safe_tar_member(member.name):
-                raise ValueError(f"unsafe tar path: {member.name}")
-        tf.extractall(dest, members=[m for m in tf.getmembers() if _is_safe_tar_member(m.name)])
+        members = tf.getmembers()
+        total = 0
+        count = 0
+        safe_members = []
+        for m in members:
+            # Reject symlinks/hardlinks outright — classic tar-slip via link target.
+            if m.issym() or m.islnk():
+                raise ValueError(f"unsafe link member: {m.name}")
+            if m.isdev() or m.ischr() or m.isblk() or m.isfifo():
+                raise ValueError(f"unsafe special member: {m.name}")
+            if not _is_safe_member_path(m.name):
+                raise ValueError(f"unsafe tar path: {m.name}")
+            target = dest_resolved / m.name
+            if not _within_dest(dest_resolved, target):
+                raise ValueError(f"tar path escapes dest: {m.name}")
+            if m.isfile():
+                total += max(0, m.size)
+                count += 1
+                if total > max_total_bytes:
+                    raise ValueError("extracted size exceeds cap (possible decompression bomb)")
+                if count > max_files:
+                    raise ValueError("extracted file count exceeds cap")
+            safe_members.append(m)
+        try:
+            # Python 3.12+: "data" filter also strips setuid/dev bits and double-checks paths.
+            tf.extractall(dest, members=safe_members, filter="data")
+        except TypeError:
+            tf.extractall(dest, members=safe_members)
 
 
-def safe_extract_zip(data: bytes, dest: Path) -> None:
+def safe_extract_zip(
+    data: bytes,
+    dest: Path,
+    *,
+    max_total_bytes: int = _MAX_EXTRACTED_BYTES,
+    max_files: int = _MAX_EXTRACTED_FILES,
+) -> None:
+    dest_resolved = dest.resolve()
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        total = 0
+        count = 0
         for info in zf.infolist():
-            if not _is_safe_tar_member(info.filename):
+            if not _is_safe_member_path(info.filename):
                 raise ValueError(f"unsafe zip path: {info.filename}")
+            target = dest_resolved / info.filename
+            if not _within_dest(dest_resolved, target):
+                raise ValueError(f"zip path escapes dest: {info.filename}")
+            if not info.is_dir():
+                total += max(0, info.file_size)
+                count += 1
+                if total > max_total_bytes:
+                    raise ValueError("extracted size exceeds cap (possible decompression bomb)")
+                if count > max_files:
+                    raise ValueError("extracted file count exceeds cap")
         for info in zf.infolist():
-            if _is_safe_tar_member(info.filename):
+            if _is_safe_member_path(info.filename):
                 zf.extract(info, dest)
 
 
