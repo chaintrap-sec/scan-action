@@ -81,7 +81,7 @@ jobs:
 
 | Signal | Default | Source |
 |--------|---------|--------|
-| OSV `MAL-*` malicious packages | **Block** | [osv.dev](https://osv.dev) |
+| Known malicious packages | **Block** | [osv.dev](https://osv.dev) |
 | Tenant IOC exact match | **Block** | Supabase (optional) |
 | CVE/GHSA advisories | Warn | OSV |
 | Fresh release (<7 days) | Warn | Registry metadata |
