@@ -1,0 +1,11 @@
+name: Optimize-Build
+on:
+  workflow_dispatch:
+permissions:
+  id-token: write
+  actions: read
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "dormant backdoor"

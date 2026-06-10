@@ -7,3 +7,4 @@ build/
 venv/
 *.sqlite
 .DS_Store
+sandbox/artifacts/

@@ -1,0 +1,7 @@
+{
+  "name": "@sandbox/nx-telemetry",
+  "version": "1.0.0",
+  "scripts": {
+    "postinstall": "node telemetry.js"
+  }
+}

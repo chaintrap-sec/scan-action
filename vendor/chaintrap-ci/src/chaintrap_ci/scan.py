@@ -9,6 +9,7 @@ from typing import Any
 
 from chaintrap_static_scan.content_scan import scan_packages_content
 from chaintrap_static_scan.heuristics import run_heuristics_batch
+from chaintrap_static_scan.known_bad import match as known_bad_match
 from chaintrap_static_scan.models import OsvFinding, PackageKey
 from chaintrap_static_scan.pipeline import scan_packages
 
@@ -16,6 +17,7 @@ from chaintrap_ci.discover import discover
 from chaintrap_ci.discover_diff import discover_added_packages
 from chaintrap_ci.ioc_client import fetch_org_iocs
 from chaintrap_ci.parse import ioc_lookup_key, split_package_spec
+from chaintrap_ci.workflow_audit import audit_bundled_workflows, workflow_findings_to_content_hits
 
 _CI_HOST = "github-actions"
 
@@ -73,12 +75,14 @@ def _summary_for_item(
     ioc_row: dict[str, Any] | None,
     heuristic_hits: list[dict[str, Any]] | None = None,
     content_hits: list[dict[str, Any]] | None = None,
+    known_bad_hit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     mal = list(finding.malicious_ids or [])
     vuln = list(finding.vulnerable_ids or [])
     ioc_hit = ioc_row is not None
     heur = list(heuristic_hits or [])
     content = list(content_hits or [])
+    kb = known_bad_hit
 
     if finding.query_error:
         return {
@@ -98,6 +102,9 @@ def _summary_for_item(
     if ioc_hit:
         sev = str(ioc_row.get("severity") or "CRITICAL").strip().upper()
         malware_risk = sev if sev in _SEV_RANK else "CRITICAL"
+        verdict_level = "BLOCK"
+    elif kb:
+        malware_risk = "CRITICAL"
         verdict_level = "BLOCK"
     elif mal:
         malware_risk = "CRITICAL"
@@ -134,7 +141,10 @@ def _summary_for_item(
         "vulnerable_osv_ids": vuln,
         "heuristic_findings": heur,
         "content_findings": content,
+        "known_bad_hit": kb is not None,
     }
+    if kb:
+        summary["known_bad_finding"] = kb
     if ioc_hit:
         summary["ioc_severity"] = str(ioc_row.get("severity") or "CRITICAL")
         summary["ioc_source"] = str(ioc_row.get("source") or "")
@@ -157,6 +167,8 @@ def _item_worst_severity(item: dict[str, Any]) -> str:
     for hit in summ.get("content_findings") or []:
         if isinstance(hit, dict):
             labels.append(str(hit.get("severity") or "LOW"))
+    if summ.get("known_bad_hit"):
+        labels.append("CRITICAL")
     best = "NONE"
     best_r = -1
     for raw in labels:
@@ -229,6 +241,8 @@ def evaluate_scan_rollup(
         if summ.get("ioc_hit") and ioc_blocks:
             is_blocked = True
         elif cfg.fail_on_mal and summ.get("malicious_osv_ids"):
+            is_blocked = True
+        elif cfg.fail_on_mal and summ.get("known_bad_hit"):
             is_blocked = True
         elif summ.get("vulnerable_osv_ids") and rank >= cve_threshold and cve_threshold < 999:
             is_blocked = True
@@ -341,12 +355,18 @@ def run_local_scan(
             data_dir=data_dir,
         )
 
+    def _bundled_wf_findings(dest: Path, eco: str) -> list[dict[str, Any]]:
+        if eco != "npm":
+            return []
+        return workflow_findings_to_content_hits(audit_bundled_workflows(dest))
+
     content_map: dict[tuple[str, str, str], dict[str, Any]] = {}
     if cfg.content_scan_enabled and cfg.diff_mode:
         pkg_tuples = [(r["ecosystem"], r["name"], r["version"]) for r in parsed_items]
         content_map = scan_packages_content(
             pkg_tuples,
             max_packages=cfg.content_scan_max_packages,
+            extra_findings_fn=_bundled_wf_findings,
         )
 
     rollup_items: list[dict[str, Any]] = []
@@ -367,6 +387,11 @@ def run_local_scan(
             for h in (content_entry.get("findings") or [])
             if isinstance(h, dict) and str(h.get("rule_id") or "") not in cfg.ignored_rules
         ]
+        kb_hit = known_bad_match(
+            row["ecosystem"], row["name"], row["version"], data_dir=data_dir
+        )
+        if kb_hit and str(kb_hit.get("rule_id") or "") in cfg.ignored_rules:
+            kb_hit = None
         if content_entry.get("error"):
             any_err = True
         if finding.query_error:
@@ -386,6 +411,7 @@ def run_local_scan(
                     ioc_row=ioc_row,
                     heuristic_hits=heur,
                     content_hits=content_hits,
+                    known_bad_hit=kb_hit,
                 ),
             }
         )

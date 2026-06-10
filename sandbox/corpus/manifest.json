@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "samples": [
+    {
+      "id": "shai-hulud-preinstall",
+      "kind": "package",
+      "ecosystem": "npm",
+      "name": "@sandbox/shai-hulud",
+      "version": "1.0.0",
+      "benign": false,
+      "expected_rules": ["CTC-TTP002"],
+      "note": "Shai-Hulud preinstall bun dropper"
+    },
+    {
+      "id": "miasma-obfuscated",
+      "kind": "package",
+      "ecosystem": "npm",
+      "name": "@sandbox/miasma-dropper",
+      "version": "1.0.0",
+      "benign": false,
+      "expected_rules": ["CTC-IOC002", "CTC-OBF011"],
+      "note": "Miasma 4MB+ ROT obfuscated dropper"
+    },
+    {
+      "id": "miasma-phantom-gyp",
+      "kind": "package",
+      "ecosystem": "npm",
+      "name": "@sandbox/phantom-gyp",
+      "version": "1.0.0",
+      "benign": false,
+      "expected_rules": ["CTC-TTP010"],
+      "note": "Phantom Gyp binding.gyp install hook"
+    },
+    {
+      "id": "nx-telemetry",
+      "kind": "package",
+      "ecosystem": "npm",
+      "name": "@sandbox/nx-telemetry",
+      "version": "1.0.0",
+      "benign": false,
+      "expected_rules": ["CTC-TTP003", "CTC-CRED010"],
+      "note": "nx/s1ngularity AI-CLI weaponization"
+    },
+    {
+      "id": "megalodon-bundled",
+      "kind": "package",
+      "ecosystem": "npm",
+      "name": "@sandbox/tiledesk-bundle",
+      "version": "2.18.12",
+      "benign": false,
+      "expected_rules": ["CTC-WF-010"],
+      "note": "Megalodon workflow bundled in tarball"
+    },
+    {
+      "id": "benign-control",
+      "kind": "package",
+      "ecosystem": "npm",
+      "name": "@sandbox/clean-lib",
+      "version": "1.0.0",
+      "benign": true,
+      "expected_rules": [],
+      "forbidden_rules": ["CTC-TTP", "CTC-OBF020", "CTC-WF", "CTC-KB"],
+      "note": "Benign npm package control"
+    },
+    {
+      "id": "known-bad-nx",
+      "kind": "denylist",
+      "ecosystem": "npm",
+      "name": "nx",
+      "version": "20.9.0",
+      "benign": false,
+      "expected_rules": ["CTC-KB001"],
+      "note": "OSV-independent denylist block"
+    },
+    {
+      "id": "megalodon-sysdiag",
+      "kind": "workflow",
+      "file": "megalodon-sysdiag.yml",
+      "benign": false,
+      "expected_rules": ["CTW-010", "CTW-011"],
+      "note": "Megalodon SysDiag variant"
+    },
+    {
+      "id": "megalodon-optimize",
+      "kind": "workflow",
+      "file": "megalodon-optimize-build.yml",
+      "benign": false,
+      "expected_rules": ["CTW-010"],
+      "note": "Megalodon dormant Optimize-Build variant"
+    },
+    {
+      "id": "ghostaction-exfil",
+      "kind": "workflow",
+      "file": "ghostaction-exfil.yml",
+      "benign": false,
+      "expected_rules": ["CTW-008"],
+      "note": "GhostAction secret exfiltration"
+    },
+    {
+      "id": "benign-ci",
+      "kind": "workflow",
+      "file": "benign-ci.yml",
+      "benign": true,
+      "expected_rules": [],
+      "forbidden_rules": ["CTW-008", "CTW-010"],
+      "note": "Benign workflow control"
+    }
+  ]
+}

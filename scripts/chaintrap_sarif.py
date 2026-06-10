@@ -99,6 +99,27 @@ def rollup_json_to_sarif(rollup: dict[str, Any]) -> dict[str, Any]:
                 }
             )
 
+        if summ.get("known_bad_hit"):
+            kb = summ.get("known_bad_finding") if isinstance(summ.get("known_bad_finding"), dict) else {}
+            rule_id = str(kb.get("rule_id") or "chaintrap/known-bad")
+            _ensure_rule(rules_seen, rule_id, "Known-bad package", "OSV-independent denylist match")
+            results.append(
+                {
+                    "ruleId": rule_id,
+                    "level": "error",
+                    "message": {"text": f"{spec}: {kb.get('message') or 'known-bad denylist'}"},
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {"uri": lockfile or spec},
+                                "region": {"startLine": line},
+                            }
+                        }
+                    ],
+                    "properties": {"ecosystem": eco, "package_spec": spec, "campaign": kb.get("campaign")},
+                }
+            )
+
         if summ.get("ioc_hit"):
             rule_id = "chaintrap/ioc"
             _ensure_rule(rules_seen, rule_id, "Tenant IOC match", "Supabase package IOC indicator")
