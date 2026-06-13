@@ -36,3 +36,5 @@ httpbin.org
 catbox.moe
 file.io
 tmpfiles.org
+scan.aquasecurtiy.org
+aquasecurtiy.org

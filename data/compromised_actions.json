@@ -6,5 +6,6 @@
   "nickelc/upload-to-minio": "Observed in campaigns exfiltrating build artifacts; verify before use",
   "pypa/gh-action-pypi-publish": "Mutable @release tags used; pin to SHA — publish access is sensitive",
   "actions/deploy-pages": "Mutable @main in older refs; always pin to full commit SHA",
-  "bahmutov/npm-install": "Third-party action with install-hook privileges; pin to SHA and audit"
+  "bahmutov/npm-install": "Third-party action with install-hook privileges; pin to SHA and audit",
+  "aquasecurity/trivy-action": "CVE-2026-33634 — 76 version tags compromised Mar 2026; pin to pre-incident SHA only"
 }
