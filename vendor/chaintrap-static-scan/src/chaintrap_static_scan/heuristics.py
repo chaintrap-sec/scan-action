@@ -245,6 +245,8 @@ def run_heuristics(
     check_age: bool = True,
     check_scripts: bool = True,
     check_typo: bool = True,
+    check_provenance: bool = True,
+    check_dep_confusion: bool = True,
     data_dir: Path | None = None,
     npm_meta: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
@@ -271,7 +273,130 @@ def run_heuristics(
         hit = check_typosquat(ecosystem, name, data_dir=data_dir)
         if hit:
             findings.append(hit)
+    if check_provenance:
+        hit = check_missing_provenance(ecosystem, name, version, npm_meta=npm_meta)
+        if hit:
+            findings.append(hit)
+    if check_dep_confusion:
+        hit = check_dependency_confusion(ecosystem, name, data_dir=data_dir)
+        if hit:
+            findings.append(hit)
     return findings
+
+
+def check_install_script_new_in_version(
+    ecosystem: str,
+    name: str,
+    version: str,
+    *,
+    npm_meta: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Return a finding if this version introduces lifecycle scripts not present in the previous version."""
+    if ecosystem.strip().lower() != "npm":
+        return None
+    data = npm_meta if npm_meta is not None else _fetch_npm_version_meta(name, version)
+    if not data:
+        return None
+    current_scripts = set(data.get("scripts", {}).keys()) & {"preinstall", "postinstall", "prepare", "install"}
+    if not current_scripts:
+        return None
+    # Attempt to compare against the previous version
+    all_versions: list[str] = []
+    try:
+        from chaintrap_static_scan.http_utils import http_get_json as _get
+
+        pkg_data, _ = _get(f"{_npm_registry_base()}/{name}")
+        if pkg_data and isinstance(pkg_data, dict):
+            all_versions = list((pkg_data.get("versions") or {}).keys())
+    except Exception:
+        pass
+
+    if len(all_versions) < 2:
+        return None
+    try:
+        idx = all_versions.index(version)
+    except ValueError:
+        return None
+    if idx == 0:
+        return None
+    prev_version = all_versions[idx - 1]
+    prev_data, _ = (
+        __import__(
+            "chaintrap_static_scan.http_utils", fromlist=["http_get_json"]
+        ).http_get_json(f"{_npm_registry_base()}/{name}/{prev_version}")
+    )
+    if not prev_data or not isinstance(prev_data, dict):
+        return None
+    prev_scripts = set(prev_data.get("scripts", {}).keys()) & {"preinstall", "postinstall", "prepare", "install"}
+    newly_added = current_scripts - prev_scripts
+    if not newly_added:
+        return None
+    return {
+        "rule_id": "CTH-004",
+        "severity": "HIGH",
+        "message": f"{name}@{version} introduces new lifecycle scripts not present in {prev_version}: {', '.join(sorted(newly_added))}",
+        "newly_added_scripts": sorted(newly_added),
+        "previous_version": prev_version,
+    }
+
+
+def check_missing_provenance(
+    ecosystem: str,
+    name: str,
+    version: str,
+    *,
+    npm_meta: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Return a finding if the package lacks SLSA provenance / attestation."""
+    eco = ecosystem.strip().lower()
+    if eco != "npm":
+        return None
+    data = npm_meta if npm_meta is not None else _fetch_npm_version_meta(name, version)
+    if not data:
+        return None
+    dist = data.get("dist") or {}
+    has_attestation = bool(dist.get("attestations") or data.get("_attestations"))
+    if has_attestation:
+        return None
+    return {
+        "rule_id": "CTH-005",
+        "severity": "LOW",
+        "message": f"{name}@{version} has no SLSA provenance attestation — consider verifying via npm audit signatures",
+    }
+
+
+def check_dependency_confusion(
+    ecosystem: str,
+    name: str,
+    *,
+    data_dir: Path | None = None,
+) -> dict[str, Any] | None:
+    """Flag scoped packages published to a public registry that appear to be internal names."""
+    eco = ecosystem.strip().lower()
+    if eco != "npm":
+        return None
+    if not name.startswith("@"):
+        return None
+    scope, _, pkg = name[1:].partition("/")
+    scope = scope.lower()
+    internal_scopes: set[str] = set()
+    if data_dir:
+        path = data_dir / "internal_scopes.txt"
+        if path.is_file():
+            internal_scopes = {
+                ln.strip().lstrip("@").lower()
+                for ln in path.read_text(encoding="utf-8").splitlines()
+                if ln.strip() and not ln.startswith("#")
+            }
+    # Heuristic: single-word scopes matching common internal patterns
+    internal_indicators = {"internal", "private", "corp", "company", "local", "intranet"}
+    if scope in internal_scopes or scope in internal_indicators or pkg.startswith("internal-"):
+        return {
+            "rule_id": "CTH-006",
+            "severity": "MEDIUM",
+            "message": f"{name} appears to be an internal-scope package published on the public registry — verify this is intentional (dependency confusion risk)",
+        }
+    return None
 
 
 def run_heuristics_batch(

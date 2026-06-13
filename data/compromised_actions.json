@@ -1,0 +1,10 @@
+{
+  "tj-actions/changed-files": "CVE-2025-30066 — repo compromised Mar 2025; verify pin is a post-fix SHA",
+  "reviewdog/action-setup": "Implicated in the tj-actions compromise (Mar 2025); verify pin",
+  "tj-actions/eslint-changed-files": "Same maintainer as tj-actions compromise; verify pin",
+  "github/super-linter": "Has had multiple incidents of supply-chain maintainer changes; pin to SHA",
+  "nickelc/upload-to-minio": "Observed in campaigns exfiltrating build artifacts; verify before use",
+  "pypa/gh-action-pypi-publish": "Mutable @release tags used; pin to SHA — publish access is sensitive",
+  "actions/deploy-pages": "Mutable @main in older refs; always pin to full commit SHA",
+  "bahmutov/npm-install": "Third-party action with install-hook privileges; pin to SHA and audit"
+}

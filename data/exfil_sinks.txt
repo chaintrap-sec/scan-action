@@ -1,0 +1,38 @@
+# Known data-exfiltration and callback endpoints
+# Format: one hostname per line (no scheme, no path)
+# Matched as exact domain or any subdomain.
+webhook.site
+requestbin.com
+requestcatcher.com
+canarytokens.com
+pipedream.net
+ngrok.io
+ngrok.app
+serveo.net
+transfer.sh
+0x0.st
+pastie.org
+pastebin.com
+paste.ee
+hastebin.com
+controlc.com
+discord.com
+discordapp.com
+hooks.slack.com
+api.telegram.org
+notify.run
+ntfy.sh
+burpcollaborator.net
+interact.sh
+oastify.com
+beeceptor.com
+hookbin.com
+mocky.io
+postb.in
+smee.io
+gist.github.com
+bin.re
+httpbin.org
+catbox.moe
+file.io
+tmpfiles.org

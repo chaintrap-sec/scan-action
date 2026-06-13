@@ -26,6 +26,9 @@ class ChaintrapPolicy:
     audit_workflows: bool = True
     fail_on_error: bool = False
     content_scan: bool = True
+    # Egress policy (wired to CTW-016)
+    egress_allow: list[str] = field(default_factory=list)
+    egress_block_unlisted: bool = False
 
 
 def _as_set(raw: Any) -> set[str]:
@@ -34,6 +37,14 @@ def _as_set(raw: Any) -> set[str]:
     if isinstance(raw, list):
         return {str(x).strip().lower() for x in raw if str(x).strip()}
     return set()
+
+
+def _as_list(raw: Any) -> list[str]:
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return [str(x).strip().lower() for x in raw if str(x).strip()]
+    return []
 
 
 def load_policy(workspace: Path) -> ChaintrapPolicy:
@@ -51,6 +62,7 @@ def load_policy(workspace: Path) -> ChaintrapPolicy:
 
     gates = raw.get("gates") if isinstance(raw.get("gates"), dict) else {}
     ignore = raw.get("ignore") if isinstance(raw.get("ignore"), dict) else {}
+    egress = raw.get("egress") if isinstance(raw.get("egress"), dict) else {}
 
     return ChaintrapPolicy(
         minimum_release_age_days=int(
@@ -71,4 +83,6 @@ def load_policy(workspace: Path) -> ChaintrapPolicy:
         audit_workflows=bool(raw.get("audit_workflows", True)),
         fail_on_error=bool(raw.get("fail_on_error", gates.get("fail_on_error", False))),
         content_scan=bool(raw.get("content_scan", gates.get("content_scan", True))),
+        egress_allow=_as_list(egress.get("allow")),
+        egress_block_unlisted=bool(egress.get("block_unlisted", False)),
     )

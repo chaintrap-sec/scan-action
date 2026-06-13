@@ -257,6 +257,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--minimum-release-age", type=int, default=7)
     p.add_argument("--audit-workflows", default="true", choices=["true", "false"])
     p.add_argument("--block-workflow-critical", default="true", choices=["true", "false"])
+    p.add_argument("--egress-allow", default="", help="Comma-separated extra egress allowlist domains")
+    p.add_argument("--egress-block-unlisted", default="false", choices=["true", "false"])
     p.add_argument("--fail-on-error", default="false", choices=["true", "false"])
     p.add_argument("--content-scan", default="true", choices=["true", "false"])
     return p.parse_args(argv)
@@ -313,7 +315,20 @@ def run_scan(args: argparse.Namespace) -> int:
     workflow_findings: list[dict[str, Any]] = []
     audit_on = str(args.audit_workflows).lower() == "true" and policy.audit_workflows
     if audit_on:
-        workflow_findings = audit_workflows(workspace)
+        data_dir = _ACTION_ROOT / "data"
+        cli_egress = [x.strip() for x in str(args.egress_allow).split(",") if x.strip()]
+        egress_allow_combined = list(policy.egress_allow) + cli_egress
+        egress_allow = frozenset(egress_allow_combined) if egress_allow_combined else None
+        egress_block_unlisted = (
+            policy.egress_block_unlisted
+            or str(args.egress_block_unlisted).lower() == "true"
+        )
+        workflow_findings = audit_workflows(
+            workspace,
+            data_dir=data_dir if data_dir.is_dir() else None,
+            egress_allow=egress_allow,
+            egress_block_unlisted=egress_block_unlisted,
+        )
         workflow_findings = [
             f for f in workflow_findings if str(f.get("rule_id") or "") not in cfg.ignored_rules
         ]
