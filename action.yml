@@ -17,6 +17,14 @@ inputs:
     description: Tenant org id for IOC filter (e.g. org-acme)
     required: false
     default: ""
+  api-url:
+    description: Chaintrap API base URL for reporting results (optional)
+    required: false
+    default: ""
+  api-key:
+    description: Chaintrap API key for reporting (optional, required if api-url set)
+    required: false
+    default: ""
   fail-on-ioc:
     description: Block on Supabase IOC exact match — block or none
     required: false
@@ -108,6 +116,8 @@ runs:
         CHAINTRAP_SUPABASE_URL: ${{ inputs.supabase-url }}
         CHAINTRAP_IOC_READ_KEY: ${{ inputs.supabase-ioc-key }}
         CHAINTRAP_ORG_ID: ${{ inputs.org-id }}
+        CHAINTRAP_API_URL: ${{ inputs.api-url }}
+        CHAINTRAP_API_KEY: ${{ inputs.api-key }}
         CHAINTRAP_FAIL_ON_IOC: ${{ inputs.fail-on-ioc }}
         CHAINTRAP_FAIL_ON_MAL: ${{ inputs.fail-on-mal }}
         CHAINTRAP_FAIL_ON_CVE: ${{ inputs.fail-on-cve }}
@@ -149,6 +159,8 @@ runs:
           --supabase-url "${CHAINTRAP_SUPABASE_URL}" \
           --supabase-key "${CHAINTRAP_IOC_READ_KEY}" \
           --org-id "${CHAINTRAP_ORG_ID}" \
+          --api-url "${CHAINTRAP_API_URL}" \
+          --api-key "${CHAINTRAP_API_KEY}" \
           --repo "${GITHUB_REPOSITORY}" \
           --ref "${GITHUB_REF_NAME}" \
           --fail-on-ioc "${CHAINTRAP_FAIL_ON_IOC}" \

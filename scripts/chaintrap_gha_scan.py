@@ -248,6 +248,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--supabase-url", default="")
     p.add_argument("--supabase-key", default="")
     p.add_argument("--org-id", default="")
+    p.add_argument("--api-url", default="")
+    p.add_argument("--api-key", default="")
     p.add_argument("--sarif-output", default=None)
     p.add_argument("--summary-output", default=None)
     p.add_argument("--step-summary", default=None)
@@ -379,6 +381,44 @@ def run_scan(args: argparse.Namespace) -> int:
         print(f"Chaintrap: warnings only ({gate_summary}).")
     else:
         print("Chaintrap: pass.")
+
+    # Report to Chaintrap API (fail-open, non-blocking)
+    api_url = getattr(args, "api_url", "") or os.environ.get("CHAINTRAP_API_URL", "")
+    api_key = getattr(args, "api_key", "") or os.environ.get("CHAINTRAP_API_KEY", "")
+    if api_url and api_key:
+        try:
+            findings_payload = []
+            for item in (rollup.get("findings") or []):
+                findings_payload.append({
+                    "ecosystem": item.get("ecosystem", "npm"),
+                    "package_name": item.get("package", ""),
+                    "package_version": item.get("version"),
+                    "severity": (item.get("severity") or "UNKNOWN").upper(),
+                    "category": item.get("category"),
+                    "message": item.get("message"),
+                })
+            payload = {
+                "org_id": args.org_id or os.environ.get("CHAINTRAP_ORG_ID", "default"),
+                "repo_full_name": args.repo or os.environ.get("GITHUB_REPOSITORY", ""),
+                "ref": args.ref or os.environ.get("GITHUB_REF_NAME", ""),
+                "sha": os.environ.get("GITHUB_SHA", ""),
+                "scan_id": "",
+                "findings": findings_payload,
+                "workflow_findings_count": len(workflow_findings),
+            }
+            import urllib.request
+            import json as _json
+            req = urllib.request.Request(
+                f"{api_url.rstrip('/')}/api/v1/ci/report",
+                data=_json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json", "X-API-Key": api_key},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                _ = resp.read()
+        except Exception:
+            # fail-open
+            pass
 
     return exit_code
 
