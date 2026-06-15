@@ -49,6 +49,7 @@ class ScanConfig:
     fail_on_error: bool = False
     content_scan_enabled: bool = True
     content_scan_max_packages: int = 30
+    resolve_manifests: str = "auto"  # auto | true | false
     ignored_packages: set[str] = field(default_factory=set)
     ignored_rules: set[str] = field(default_factory=set)
 
@@ -268,6 +269,15 @@ def _should_block_heuristic(hit: dict[str, Any], cfg: ScanConfig) -> bool:
     return False
 
 
+def _resolve_manifests_enabled(cfg: ScanConfig) -> bool:
+    mode = (cfg.resolve_manifests or "auto").strip().lower()
+    if mode == "false":
+        return False
+    if mode == "true":
+        return True
+    return True
+
+
 def run_local_scan(
     workspace: Path,
     *,
@@ -289,21 +299,25 @@ def run_local_scan(
     eco_list = ecosystems or ["npm", "pypi"]
     eco_set = {e.strip().lower() for e in eco_list if e.strip()}
     discovery_mode = "full"
+    resolution_warnings: list[dict] = []
+    resolve_on = _resolve_manifests_enabled(cfg)
 
     if cfg.diff_mode and cfg.base_ref:
-        discovered, discovery_mode = discover_added_packages(
+        discovered, discovery_mode, resolution_warnings = discover_added_packages(
             workspace,
             base_ref=cfg.base_ref,
             ecosystems=eco_set,
             paths=paths,
             max_items=max_packages,
+            resolve_manifests=resolve_on,
         )
     else:
-        discovered = discover(
+        discovered, resolution_warnings = discover(
             workspace=workspace,
             paths=paths,
             ecosystems=eco_list,
             max_packages=max_packages,
+            resolve_manifests=resolve_on,
         )
 
     if not discovered:
@@ -322,6 +336,7 @@ def run_local_scan(
             "ioc_enabled": bool(supabase_url and supabase_key and org_id),
             "package_count": 0,
             "discovery_mode": discovery_mode,
+            "resolution_warnings": resolution_warnings,
         }
 
     keys: list[PackageKey] = []
@@ -333,7 +348,17 @@ def run_local_scan(
             continue
         name, ver = split_package_spec(eco, spec)
         keys.append(PackageKey(host=_CI_HOST, ecosystem=eco, name=name, version=ver))  # type: ignore[arg-type]
-        parsed_items.append({"ecosystem": eco, "package_spec": spec, "name": name, "version": ver})
+        parsed_items.append(
+            {
+                "ecosystem": eco,
+                "package_spec": spec,
+                "name": name,
+                "version": ver,
+                "lockfile": str(row.get("lockfile_path") or row.get("lockfile") or ""),
+                "resolution_source": row.get("resolution_source"),
+                "declared_constraint": row.get("declared_constraint"),
+            }
+        )
 
     osv_findings = scan_packages(keys)
 
@@ -399,6 +424,9 @@ def run_local_scan(
                 "ecosystem": row["ecosystem"],
                 "package_spec": row["package_spec"],
                 "item_status": status,
+                "lockfile": row.get("lockfile") or None,
+                "resolution_source": row.get("resolution_source"),
+                "declared_constraint": row.get("declared_constraint"),
                 "summary": _summary_for_item(
                     ecosystem=row["ecosystem"],
                     package_spec=row["package_spec"],
@@ -426,4 +454,5 @@ def run_local_scan(
         "ioc_enabled": bool(ioc_map or (supabase_url and supabase_key and org_id)),
         "package_count": len(rollup_items),
         "discovery_mode": discovery_mode,
+        "resolution_warnings": resolution_warnings,
     }

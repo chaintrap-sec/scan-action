@@ -53,7 +53,7 @@ def test_discover_added_skips_unchanged_root_lockfile(tmp_path: Path) -> None:
     _git(repo, "add", "chaintrap-attack-sim")
     _git(repo, "commit", "-m", "add sim fixtures")
 
-    added, mode = discover_added_packages(
+    added, mode, _warnings = discover_added_packages(
         repo,
         base_ref="main",
         head_ref="HEAD",
@@ -85,7 +85,7 @@ def test_discover_added_reports_delta_on_modified_lockfile(tmp_path: Path) -> No
     _git(repo, "add", "requirements.txt")
     _git(repo, "commit", "-m", "add dep")
 
-    added, mode = discover_added_packages(
+    added, mode, _warnings = discover_added_packages(
         repo,
         base_ref="main",
         head_ref="HEAD",

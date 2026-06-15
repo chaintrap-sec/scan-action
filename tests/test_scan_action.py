@@ -29,7 +29,7 @@ WF = FIXTURES / "workflow_audit"
 
 
 def test_discover_malicious_fixture():
-    items = discover_packages(MAL, {"npm", "pypi"}, max_items=50)
+    items, _warnings = discover_packages(MAL, {"npm", "pypi"}, max_items=50)
     specs = {i["package_spec"] for i in items}
     assert "ts-logger-pack@1.1.3" in specs
     assert any("telnyx@" in s for s in specs)
@@ -37,13 +37,13 @@ def test_discover_malicious_fixture():
 
 def test_discover_yarn_lock():
     yarn_dir = ROOT / "tests" / "fixtures" / "yarn_project"
-    items = discover_packages(yarn_dir, {"npm"}, max_items=50)
+    items, _warnings = discover_packages(yarn_dir, {"npm"}, max_items=50)
     assert any(i["package_spec"] == "lodash@4.17.21" for i in items)
 
 
 def test_discover_pipfile_lock():
     pip_dir = ROOT / "tests" / "fixtures" / "pipfile_project"
-    items = discover_packages(pip_dir, {"pypi"}, max_items=50)
+    items, _warnings = discover_packages(pip_dir, {"pypi"}, max_items=50)
     assert any("requests@" in i["package_spec"] for i in items)
 
 

@@ -125,13 +125,16 @@ See [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## Lockfiles supported
 
-`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `uv.lock`, `poetry.lock`, `Pipfile.lock`, `requirements.txt` (pinned `==` only)
+`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `uv.lock`, `poetry.lock`, `Pipfile.lock`, `requirements.txt` (pinned `==` or compiled ranges)
 
 ## Scope & limits
 
-- Packages are matched by **exact name and version** from your lockfiles — unpinned `requirements.txt` entries (ranges, no `==`) are not scanned
-- Transitive dependencies are covered **only when they appear in a lockfile** (true for `package-lock.json`/`pnpm-lock.yaml`/`poetry.lock`/`uv.lock`; not for a bare `requirements.txt`)
+- Packages are matched by **exact name and version** after discovery — unpinned `requirements.txt` lines (ranges, bare names) and `package.json` semver ranges are **compiled on the runner** when `resolve-manifests` is enabled (default `auto`)
+- Compile uses **uv** (`uv pip compile`) for PyPI and `npm install --package-lock-only` for npm; expect roughly **5–45 seconds per changed manifest** on cold cache, often **2–8s** with a warm `~/.cache/uv` Actions cache
+- For faster, deterministic CI, commit **`uv.lock`** / **`package-lock.json`** instead of relying on compile
+- Transitive dependencies from compile are included in the resolved set (same as a real install resolve)
 - Deep code analysis of package contents runs on **packages newly added in a PR**, not the whole existing tree
+- Floating versions with **no manifest file change** (e.g. `latest`) are only caught on scheduled full scans, not PR diff
 - A clean scan reduces risk; it is not a guarantee a package is safe
 
 ## Docs

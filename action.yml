@@ -77,6 +77,10 @@ inputs:
     description: Download and scan package contents on PR diff-added packages
     required: false
     default: "true"
+  resolve-manifests:
+    description: Compile unpinned requirements.txt / package.json (auto | true | false)
+    required: false
+    default: auto
 
 outputs:
   scan-id:
@@ -109,6 +113,12 @@ runs:
                     -e "${{ github.action_path }}/vendor/chaintrap-static-scan" \
                     -e "${{ github.action_path }}/vendor/chaintrap-ci"
 
+    - name: Set up uv
+      if: inputs.resolve-manifests != 'false'
+      uses: astral-sh/setup-uv@38b582c1113e022a7b17e8e6670d72d372aca2e9 # v4.2.0
+      with:
+        enable-cache: true
+
     - name: Run Chaintrap scan
       id: scan
       shell: bash
@@ -131,6 +141,7 @@ runs:
         CHAINTRAP_MIN_RELEASE_AGE: ${{ inputs.minimum-release-age }}
         CHAINTRAP_FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
         CHAINTRAP_CONTENT_SCAN: ${{ inputs.content-scan }}
+        CHAINTRAP_RESOLVE_MANIFESTS: ${{ inputs.resolve-manifests }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_REF_NAME: ${{ github.head_ref || github.ref_name }}
         GITHUB_BASE_REF: ${{ github.base_ref }}
@@ -177,6 +188,7 @@ runs:
           --minimum-release-age "${CHAINTRAP_MIN_RELEASE_AGE}" \
           --fail-on-error "${CHAINTRAP_FAIL_ON_ERROR}" \
           --content-scan "${CHAINTRAP_CONTENT_SCAN}" \
+          --resolve-manifests "${CHAINTRAP_RESOLVE_MANIFESTS:-auto}" \
           --sarif-output "${SARIF_FILE}" \
           --summary-output "${SUMMARY_FILE}" \
           --step-summary "${GITHUB_STEP_SUMMARY}" \

@@ -20,6 +20,10 @@ _LOCKFILE_NAMES: dict[str, str] = {
     "Pipfile.lock": "pypi",
 }
 
+_MANIFEST_NAMES: dict[str, str] = {
+    "package.json": "npm",
+}
+
 _UV_PKG_NAME = re.compile(r'^name\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
 _UV_PKG_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
 _POETRY_PKG_NAME = re.compile(r'^name\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
@@ -68,7 +72,7 @@ def _dedupe_items(items: list[dict]) -> list[dict]:
         if not eco or not spec or key in seen:
             continue
         seen.add(key)
-        out.append({"ecosystem": eco, "package_spec": spec})
+        out.append(dict(item))
     return out
 
 
@@ -360,11 +364,39 @@ def _iter_lockfiles(search_dir: Path) -> list[Path]:
     return found
 
 
-def _parse_lockfile(lock_path: Path) -> list[dict]:
+def _iter_manifests(search_dir: Path) -> list[Path]:
+    found: list[Path] = []
+    for path in sorted(search_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.name in _MANIFEST_NAMES:
+            found.append(path)
+    return found
+
+
+def _parse_lockfile(
+    lock_path: Path,
+    *,
+    resolve_manifests: bool = False,
+) -> list[dict]:
+    if lock_path.name == "requirements.txt":
+        from chaintrap_ci.manifest_resolve import packages_from_requirements_manifest
+
+        rel = lock_path.as_posix()
+        packages, _err = packages_from_requirements_manifest(
+            lock_path,
+            resolve_manifests=resolve_manifests,
+            manifest_rel=rel,
+        )
+        return packages
     reader = _READERS.get(lock_path.name)
     if reader is None:
         return []
-    return reader(lock_path)
+    rows = reader(lock_path)
+    for row in rows:
+        row.setdefault("lockfile_path", lock_path.as_posix())
+        row.setdefault("resolution_source", "lockfile")
+    return rows
 
 
 def discover_packages(
@@ -373,7 +405,8 @@ def discover_packages(
     *,
     paths: str = ".",
     max_items: int = _DEFAULT_MAX_ITEMS,
-) -> list[dict]:
+    resolve_manifests: bool = False,
+) -> tuple[list[dict], list[dict]]:
     """Walk lockfiles under root and return pinned package specs.
 
     Each item has keys ``ecosystem`` (``npm`` or ``pypi``) and ``package_spec``
@@ -383,18 +416,40 @@ def discover_packages(
     if not wanted:
         wanted = {"npm", "pypi"}
 
+    from chaintrap_ci.manifest_resolve import (
+        compile_package_json_path,
+        dir_has_npm_lockfile,
+    )
+
     collected: list[dict] = []
+    warnings: list[dict] = []
     for search_dir in _resolve_search_dirs(root, paths):
         for lock_path in _iter_lockfiles(search_dir):
             eco = _LOCKFILE_NAMES.get(lock_path.name)
             if not eco or eco not in wanted:
                 continue
-            collected.extend(_parse_lockfile(lock_path))
+            collected.extend(
+                _parse_lockfile(lock_path, resolve_manifests=resolve_manifests)
+            )
+
+        if "npm" in wanted and resolve_manifests:
+            for manifest_path in _iter_manifests(search_dir):
+                if dir_has_npm_lockfile(manifest_path.parent):
+                    continue
+                rel = manifest_path.relative_to(root).as_posix()
+                result = compile_package_json_path(
+                    manifest_path,
+                    manifest_rel=rel,
+                )
+                if result.error:
+                    warnings.append({"manifest": rel, "error": result.error})
+                    continue
+                collected.extend(result.packages)
 
     deduped = _dedupe_items(collected)
     if max_items > 0:
-        return deduped[:max_items]
-    return deduped
+        deduped = deduped[:max_items]
+    return deduped, warnings
 
 
 def discover(
@@ -403,9 +458,16 @@ def discover(
     paths: list[str] | None = None,
     ecosystems: list[str] | None = None,
     max_packages: int = _DEFAULT_MAX_ITEMS,
-) -> list[dict]:
+    resolve_manifests: bool = False,
+) -> tuple[list[dict], list[dict]]:
     """GHA-friendly wrapper around discover_packages."""
     root = Path(workspace)
     paths_str = ",".join(paths) if paths else "."
     eco_set = {e.strip().lower() for e in (ecosystems or ["npm", "pypi"]) if e.strip()}
-    return discover_packages(root, eco_set, paths=paths_str, max_items=max_packages)
+    return discover_packages(
+        root,
+        eco_set,
+        paths=paths_str,
+        max_items=max_packages,
+        resolve_manifests=resolve_manifests,
+    )
