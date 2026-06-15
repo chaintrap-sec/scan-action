@@ -17,6 +17,7 @@ from chaintrap_ci.discover import discover
 from chaintrap_ci.discover_diff import discover_added_packages
 from chaintrap_ci.ioc_client import fetch_org_iocs
 from chaintrap_ci.parse import ioc_lookup_key, split_package_spec
+from chaintrap_ci.risk_narrative import enrich_summary_with_risk_narrative, has_block_tier_content
 from chaintrap_ci.workflow_audit import audit_bundled_workflows, workflow_findings_to_content_hits
 
 _CI_HOST = "github-actions"
@@ -85,7 +86,7 @@ def _summary_for_item(
     kb = known_bad_hit
 
     if finding.query_error:
-        return {
+        base = {
             "verdict_level": "WARN",
             "malware_risk": "—",
             "vulnerability_risk": "—",
@@ -94,6 +95,7 @@ def _summary_for_item(
             "heuristic_findings": heur,
             "content_findings": content,
         }
+        return enrich_summary_with_risk_narrative(base, content, known_bad=kb is not None)
 
     malware_risk = "NONE"
     vulnerability_risk = "NONE"
@@ -112,25 +114,6 @@ def _summary_for_item(
     elif vuln:
         vulnerability_risk = "HIGH"
         verdict_level = "REVIEW"
-    elif content:
-        worst_c = max(content, key=lambda h: _content_severity_rank(str(h.get("severity"))))
-        cs = str(worst_c.get("severity") or "LOW").upper()
-        if cs in ("CRITICAL", "HIGH"):
-            verdict_level = "BLOCK"
-            malware_risk = cs if cs in _SEV_RANK else "CRITICAL"
-        elif cs == "MEDIUM":
-            verdict_level = "REVIEW"
-        else:
-            verdict_level = "WARN"
-    elif heur:
-        worst_h = max(heur, key=lambda h: _heuristic_severity_to_rank(str(h.get("severity"))))
-        hs = str(worst_h.get("severity") or "LOW").upper()
-        if hs in ("CRITICAL", "HIGH"):
-            verdict_level = "BLOCK"
-        elif hs == "MEDIUM":
-            verdict_level = "REVIEW"
-        else:
-            verdict_level = "WARN"
 
     summary: dict[str, Any] = {
         "verdict_level": verdict_level,
@@ -140,7 +123,6 @@ def _summary_for_item(
         "malicious_osv_ids": mal,
         "vulnerable_osv_ids": vuln,
         "heuristic_findings": heur,
-        "content_findings": content,
         "known_bad_hit": kb is not None,
     }
     if kb:
@@ -149,7 +131,7 @@ def _summary_for_item(
         summary["ioc_severity"] = str(ioc_row.get("severity") or "CRITICAL")
         summary["ioc_source"] = str(ioc_row.get("source") or "")
         summary["ioc_key"] = str(ioc_row.get("ioc_key") or "")
-    return summary
+    return enrich_summary_with_risk_narrative(summary, content, known_bad=kb is not None)
 
 
 def _item_worst_severity(item: dict[str, Any]) -> str:
@@ -157,6 +139,13 @@ def _item_worst_severity(item: dict[str, Any]) -> str:
     labels: list[str] = []
     if summ.get("ioc_hit"):
         labels.append(str(summ.get("ioc_severity") or summ.get("malware_risk") or "CRITICAL"))
+    if summ.get("malicious_osv_ids"):
+        labels.append("CRITICAL")
+    score = summ.get("risk_score")
+    if isinstance(score, (int, float)) and score >= 9:
+        labels.append("CRITICAL")
+    elif isinstance(score, (int, float)) and score >= 7:
+        labels.append("HIGH")
     for key in ("malware_risk", "vulnerability_risk", "verdict_level"):
         val = summ.get(key)
         if val is not None and str(val).strip() and str(val).strip() != "—":
@@ -190,25 +179,39 @@ def _item_worst_severity(item: dict[str, Any]) -> str:
     return best if best_r >= 0 else "UNKNOWN"
 
 
-def _should_block_content(hit: dict[str, Any], cfg: ScanConfig) -> bool:
-    rule = str(hit.get("rule_id") or "")
-    if rule in cfg.ignored_rules:
-        return False
-    sev = str(hit.get("severity") or "LOW").upper()
-    return sev in ("CRITICAL", "HIGH")
+def _should_block_item(summ: dict[str, Any], cfg: ScanConfig) -> bool:
+    ioc_blocks = (cfg.fail_on_ioc or "block").strip().lower() != "none"
+    if summ.get("ioc_hit") and ioc_blocks:
+        return True
+    if cfg.fail_on_mal and summ.get("malicious_osv_ids"):
+        return True
+    if cfg.fail_on_mal and summ.get("known_bad_hit"):
+        return True
+    if cfg.fail_on_mal and has_block_tier_content(summ):
+        return True
+    for hit in summ.get("heuristic_findings") or []:
+        if isinstance(hit, dict) and _should_block_heuristic(hit, cfg):
+            return True
+    return False
 
 
-def _should_block_heuristic(hit: dict[str, Any], cfg: ScanConfig) -> bool:
-    rule = str(hit.get("rule_id") or "")
-    if rule in cfg.ignored_rules:
-        return False
-    sev = str(hit.get("severity") or "LOW").upper()
-    if rule == "CTH-001" and cfg.block_fresh_releases:
+def _should_warn_item(summ: dict[str, Any], cfg: ScanConfig, cve_threshold: int) -> bool:
+    verdict = str(summ.get("verdict_level") or "PASS")
+    if verdict in ("REVIEW", "WARN", "INFO"):
         return True
-    if rule == "CTH-002" and cfg.block_install_scripts:
+    vuln_ids = summ.get("vulnerable_osv_ids") or []
+    if vuln_ids:
+        if cve_threshold >= 999:
+            return True
+        rank = _SEV_RANK.get(str(summ.get("vulnerability_risk") or "HIGH").upper(), 3)
+        if rank >= cve_threshold:
+            return True
+    score = summ.get("risk_score")
+    if isinstance(score, (int, float)) and score >= 4.5:
         return True
-    if rule == "CTH-003" and cfg.block_typosquat:
-        return True
+    for hit in summ.get("heuristic_findings") or []:
+        if isinstance(hit, dict) and not _should_block_heuristic(hit, cfg):
+            return True
     return False
 
 
@@ -218,7 +221,6 @@ def evaluate_scan_rollup(
 ) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]]]:
     """Return (exit_code, blocked, warned). exit 0 pass, 1 warn-only, 2 blocked."""
     items = rollup.get("items") if isinstance(rollup.get("items"), list) else []
-    ioc_blocks = (cfg.fail_on_ioc or "block").strip().lower() != "none"
     cve_threshold = _fail_rank(cfg.fail_on_cve)
 
     blocked: list[dict[str, Any]] = []
@@ -237,29 +239,9 @@ def evaluate_scan_rollup(
         enriched["_worst_severity"] = worst
         enriched["_severity_rank"] = rank
 
-        is_blocked = False
-        if summ.get("ioc_hit") and ioc_blocks:
-            is_blocked = True
-        elif cfg.fail_on_mal and summ.get("malicious_osv_ids"):
-            is_blocked = True
-        elif cfg.fail_on_mal and summ.get("known_bad_hit"):
-            is_blocked = True
-        elif summ.get("vulnerable_osv_ids") and rank >= cve_threshold and cve_threshold < 999:
-            is_blocked = True
-        else:
-            for hit in summ.get("content_findings") or []:
-                if isinstance(hit, dict) and _should_block_content(hit, cfg):
-                    is_blocked = True
-                    break
-            if not is_blocked:
-                for hit in summ.get("heuristic_findings") or []:
-                    if isinstance(hit, dict) and _should_block_heuristic(hit, cfg):
-                        is_blocked = True
-                        break
-
-        if is_blocked:
+        if _should_block_item(summ, cfg):
             blocked.append(enriched)
-        elif rank > 0:
+        elif _should_warn_item(summ, cfg, cve_threshold):
             warned.append(enriched)
 
     bundle_status = str(rollup.get("bundle_status") or "")
@@ -271,6 +253,19 @@ def evaluate_scan_rollup(
     if warned:
         return 1, blocked, warned
     return 0, blocked, warned
+
+
+def _should_block_heuristic(hit: dict[str, Any], cfg: ScanConfig) -> bool:
+    rule = str(hit.get("rule_id") or "")
+    if rule in cfg.ignored_rules:
+        return False
+    if rule == "CTH-001" and cfg.block_fresh_releases:
+        return True
+    if rule == "CTH-002" and cfg.block_install_scripts:
+        return True
+    if rule == "CTH-003" and cfg.block_typosquat:
+        return True
+    return False
 
 
 def run_local_scan(
