@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "description": "Canonical signal_tier mapping for PyPI and npm content-scan rules. Source: chaintrap_static_scan.signal_tiers",
+  "tiers": {
+    "block": "Fails PR when fail_on_mal is true; shown in TL;DR",
+    "review": "REVIEW/WARN only; shown in TL;DR",
+    "info": "Hidden from TL;DR unless evidence expanded"
+  },
+  "pypi_block_rule_ids": [
+    "CTC-KB001",
+    "exec_urllib_urlopen_chain",
+    "marshal_loads",
+    "builtins_dunder_import_exec",
+    "subprocess_popen_shell_true",
+    "discord_webhook_url",
+    "setup_py_install_hook"
+  ],
+  "pypi_review_rule_ids": [
+    "os_system",
+    "subprocess_spawn",
+    "eval_call",
+    "base64_b64decode"
+  ],
+  "pypi_info_rule_ids": [
+    "dynamic_import_dunder",
+    "requests_http",
+    "httpx_http"
+  ],
+  "npm_block_rule_ids": [
+    "CTC-KB001",
+    "CTC-TTP002",
+    "CTC-TTP010",
+    "CTC-OBF020"
+  ]
+}
