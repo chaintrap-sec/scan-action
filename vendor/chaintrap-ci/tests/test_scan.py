@@ -68,7 +68,7 @@ def test_evaluate_blocks_on_mal_when_enabled():
 @patch("chaintrap_ci.scan.scan_packages")
 @patch("chaintrap_ci.scan.discover")
 def test_run_local_scan_merges_ioc(mock_discover, mock_osv, mock_ioc, tmp_path):
-    mock_discover.return_value = [{"ecosystem": "npm", "package_spec": "evil@1.0.0"}]
+    mock_discover.return_value = ([{"ecosystem": "npm", "package_spec": "evil@1.0.0"}], [])
     pk = PackageKey(host="github-actions", ecosystem="npm", name="evil", version="1.0.0")
     mock_osv.return_value = {pk: OsvFinding(malicious_ids=[], vulnerable_ids=[], query_error=None)}
     mock_ioc.return_value = {

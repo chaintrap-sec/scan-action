@@ -56,6 +56,16 @@ def _format_package_risk_card(item: dict[str, Any]) -> list[str]:
     score = summ.get("risk_score")
     score_txt = f"{score}/10" if isinstance(score, (int, float)) else "—"
     lines = [f"### `{spec}` — {verdict} · {score_txt}", ""]
+    declared = item.get("declared_constraint")
+    resolution_source = str(item.get("resolution_source") or "")
+    if declared and resolution_source == "compile":
+        lines.append(
+            f"**Resolved:** `{declared}` → `{spec}` (compiled)"
+        )
+        lines.append("")
+    elif resolution_source == "compile":
+        lines.append(f"**Resolved:** `{spec}` (compiled manifest)")
+        lines.append("")
     tldr = summ.get("risk_tldr") or _block_reason(item)
     lines.append(f"**TL;DR:** {tldr}")
     lines.append("")
@@ -143,6 +153,11 @@ def format_summary_markdown(
     status = str(rollup.get("bundle_status") or "")
     scan_mode = str(rollup.get("scan_mode") or "runner-osv-ioc")
     discovery = str(rollup.get("discovery_mode") or "full")
+    resolution_warnings = (
+        rollup.get("resolution_warnings")
+        if isinstance(rollup.get("resolution_warnings"), list)
+        else []
+    )
     items = rollup.get("items") if isinstance(rollup.get("items"), list) else []
     wf = workflow_findings or []
 
@@ -176,6 +191,22 @@ def format_summary_markdown(
     if ref:
         lines.append(f"| Ref | `{ref}` |")
     lines.append("")
+
+    if resolution_warnings:
+        lines.append("<details>")
+        lines.append(
+            f"<summary><strong>Unpinned manifests compiled ({len(resolution_warnings)} warning(s))</strong></summary>"
+        )
+        lines.append("")
+        for warn in resolution_warnings:
+            if not isinstance(warn, dict):
+                continue
+            manifest = warn.get("manifest") or "manifest"
+            err = warn.get("error") or "unknown error"
+            lines.append(f"- `{manifest}`: {err}")
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
 
     if wf:
         lines.append("<details>")

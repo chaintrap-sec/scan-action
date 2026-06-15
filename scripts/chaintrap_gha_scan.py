@@ -114,6 +114,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--egress-block-unlisted", default="false", choices=["true", "false"])
     p.add_argument("--fail-on-error", default="false", choices=["true", "false"])
     p.add_argument("--content-scan", default="true", choices=["true", "false"])
+    p.add_argument(
+        "--resolve-manifests",
+        default="auto",
+        choices=["auto", "true", "false"],
+        help="Compile unpinned requirements.txt / package.json on runner (uv/npm)",
+    )
     return p.parse_args(argv)
 
 
@@ -140,6 +146,7 @@ def run_scan(args: argparse.Namespace) -> int:
         minimum_release_age_days=int(args.minimum_release_age),
         fail_on_error=str(args.fail_on_error).lower() == "true",
         content_scan_enabled=str(args.content_scan).lower() == "true",
+        resolve_manifests=str(args.resolve_manifests),
     )
     cfg = _merge_policy(cfg, policy, args)
 

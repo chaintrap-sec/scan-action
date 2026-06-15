@@ -36,6 +36,7 @@ jobs:
         id: scan
         with:
           paths: test_fixtures/malicious_dep_test
+          diff-mode: "false"
           heuristics: "false"
           audit-workflows: "false"
         continue-on-error: true
