@@ -95,7 +95,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: chaintrap-sec/scan-action@v1.2.0
+      - uses: chaintrap-sec/scan-action@v1.2.1
         id: chaintrap
 
       - uses: github/codeql-action/upload-sarif@v3
@@ -141,11 +141,12 @@ jobs:
 
 | Pin style | When to use |
 | --- | --- |
-| `@v1.2.0` | Semver tag — easy upgrades, review release notes |
+| `@v1.2.1` | Latest semver tag — easy upgrades, review release notes |
+| `@v1` | Floating major — tracks latest v1.x |
 | `@<full-commit-sha>` | Maximum supply-chain hygiene — pin the action itself |
 
 ```yaml
-- uses: chaintrap-sec/scan-action@e84400e8ae0371928eb2a953fcee021597bdee46  # v1.2.0
+- uses: chaintrap-sec/scan-action@e0b01c0  # v1.2.1
 ```
 
 Want scan + SARIF only (no PR comment)? See [examples/minimal-workflow.yml](examples/minimal-workflow.yml).

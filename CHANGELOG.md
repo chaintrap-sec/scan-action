@@ -2,6 +2,14 @@
 
 All notable changes to [chaintrap-sec/scan-action](https://github.com/chaintrap-sec/scan-action).
 
+## [1.2.1] - 2026-06-17
+
+### Changed
+
+- Market-ready README with value prop, example PR output, pinning guide
+- `examples/minimal-workflow.yml` and `examples/README.md`
+- Marketplace action description updated
+
 ## [1.2.0] - 2026-06-17
 
 ### Added
@@ -28,4 +36,5 @@ All notable changes to [chaintrap-sec/scan-action](https://github.com/chaintrap-
 - SARIF + PR summary markdown outputs
 - Optional Supabase tenant IOC layer
 
+[1.2.1]: https://github.com/chaintrap-sec/scan-action/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/chaintrap-sec/scan-action/compare/v1...v1.2.0
