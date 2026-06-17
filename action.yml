@@ -1,5 +1,5 @@
 name: Chaintrap Supply Chain Scan
-description: Block malicious npm/PyPI deps on every PR — OSV MAL-*, content scan with defanged IOC evidence, CI workflow audit. Runner-local, zero secrets.
+description: Block malicious npm/PyPI packages on every PR — known-malware scan, package code inspection, CI workflow check. Runs on your runner, no API keys required.
 branding:
   icon: shield
   color: teal
