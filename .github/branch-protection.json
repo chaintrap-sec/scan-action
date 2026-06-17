@@ -1,0 +1,16 @@
+{
+  "required_status_checks": {
+    "strict": true,
+    "checks": [
+      {"context": "unit"},
+      {"context": "integration"},
+      {"context": "security-abuse"},
+      {"context": "sandbox"}
+    ]
+  },
+  "enforce_admins": false,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 1
+  },
+  "restrictions": null
+}

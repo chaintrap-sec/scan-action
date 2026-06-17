@@ -28,7 +28,11 @@ python sandbox/run_sandbox.py
 
 Job `security-abuse` in [.github/workflows/self-test.yml](../.github/workflows/self-test.yml) runs on every push/PR to `main`.
 
-Dogfood job `dogfood-security-abuse` runs the action against `test_fixtures/security_abuse/`.
+Job `dogfood-security-abuse` runs the action against `test_fixtures/security_abuse/` and verifies the PR summary marker appears exactly once.
+
+## Branch protection
+
+Required checks on `main`: `unit`, `integration`, `security-abuse`, `sandbox`. Config: [.github/branch-protection.json](../.github/branch-protection.json).
 
 ## Manual checklist (release gate)
 
