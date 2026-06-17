@@ -16,7 +16,7 @@ _MAX_EVIDENCE = 5
 
 
 def _norm_hit(hit: dict[str, Any]) -> dict[str, Any]:
-    return {
+    out = {
         "rule_id": str(hit.get("rule_id") or ""),
         "severity": str(hit.get("severity") or "LOW").upper(),
         "category": str(hit.get("category") or ""),
@@ -25,6 +25,10 @@ def _norm_hit(hit: dict[str, Any]) -> dict[str, Any]:
         "line": int(hit.get("line") or 0),
         "snippet": str(hit.get("snippet") or "")[:240],
     }
+    artifacts = hit.get("artifacts")
+    if isinstance(artifacts, dict):
+        out["artifacts"] = artifacts
+    return out
 
 
 def dedupe_content_findings(findings: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
@@ -51,8 +55,9 @@ def dedupe_content_findings(findings: list[dict[str, Any]]) -> tuple[list[dict[s
         existing["count"] = int(existing.get("count") or 0) + 1
         tier_rank = {"block": 3, "review": 2, "info": 1}
         if tier_rank.get(tier, 0) > tier_rank.get(existing.get("signal_tier"), 0):
-            for k in ("file", "line", "snippet", "severity", "signal_tier", "theme"):
-                existing[k] = hit[k]
+            for k in ("file", "line", "snippet", "severity", "signal_tier", "theme", "message", "artifacts"):
+                if k in hit:
+                    existing[k] = hit[k]
     groups = sorted(
         buckets.values(),
         key=lambda h: (

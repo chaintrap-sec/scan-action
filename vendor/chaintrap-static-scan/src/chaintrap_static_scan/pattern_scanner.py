@@ -17,6 +17,7 @@ from chaintrap_static_scan.npm_malware_rules import (
     NPM_OVERSIZE_CATEGORIES,
     NpmMalwareRule,
 )
+from chaintrap_static_scan.ioc_extract import enrich_content_hit
 from chaintrap_static_scan.obfuscation_analyzer import analyze_js_structure
 from chaintrap_static_scan.pypi_malware_rules import (
     PYPI_MALWARE_RULES,
@@ -356,15 +357,19 @@ def scan_tree(
 
 
 def hits_to_dicts(hits: list[PatternHit]) -> list[dict[str, Any]]:
-    return [
-        {
-            "rule_id": h.rule_id,
-            "severity": h.severity,
-            "category": h.category,
-            "message": h.message,
-            "file": h.file,
-            "line": h.line,
-            "snippet": h.snippet,
-        }
-        for h in hits
-    ]
+    out: list[dict[str, Any]] = []
+    for h in hits:
+        out.append(
+            enrich_content_hit(
+                {
+                    "rule_id": h.rule_id,
+                    "severity": h.severity,
+                    "category": h.category,
+                    "message": h.message,
+                    "file": h.file,
+                    "line": h.line,
+                    "snippet": h.snippet,
+                }
+            )
+        )
+    return out

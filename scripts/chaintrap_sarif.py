@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from chaintrap_static_scan.ioc_extract import primary_artifact_label
+
 _SEV_RANK = {
     "CRITICAL": 4,
     "HIGH": 3,
@@ -169,11 +171,17 @@ def rollup_json_to_sarif(rollup: dict[str, Any]) -> dict[str, Any]:
             file_uri = str(hit.get("file") or lockfile or spec)
             hit_line = int(hit.get("line") or 1)
             _ensure_rule(rules_seen, rule_id, rule_id, str(hit.get("message") or "Content malware pattern"))
+            artifacts = hit.get("artifacts") if isinstance(hit.get("artifacts"), dict) else {}
+            primary = primary_artifact_label(artifacts)
+            base_msg = str(hit.get("message") or rule_id)
+            msg_text = f"{spec}: {rule_id} — {base_msg}"
+            if primary:
+                msg_text = f"{spec}: {rule_id} — {primary}"
             results.append(
                 {
                     "ruleId": rule_id,
                     "level": _sarif_level(str(hit.get("severity") or "HIGH")),
-                    "message": {"text": f"{spec}: {hit.get('message') or rule_id}"},
+                    "message": {"text": msg_text},
                     "locations": [
                         {
                             "physicalLocation": {
@@ -186,6 +194,7 @@ def rollup_json_to_sarif(rollup: dict[str, Any]) -> dict[str, Any]:
                         "ecosystem": eco,
                         "package_spec": spec,
                         "snippet": str(hit.get("snippet") or "")[:240],
+                        "artifacts": artifacts,
                     },
                 }
             )

@@ -49,6 +49,48 @@ def _block_reason(item: dict[str, Any]) -> str:
     return "; ".join(parts) or "Policy gate triggered"
 
 
+def _format_evidence_hit(hit: dict[str, Any]) -> list[str]:
+    """Render one evidence hit with optional defanged artifact sub-bullets."""
+    rid = hit.get("rule_id", "")
+    fpath = hit.get("file", "")
+    line_no = hit.get("line", "")
+    count = hit.get("count", 1)
+    message = str(hit.get("message") or "").strip()
+    loc = f"`{fpath}:{line_no}`" if fpath else ""
+    cnt = f" ×{count}" if int(count or 1) > 1 else ""
+    lead = f"- `{rid}`{cnt} {loc}"
+    if message:
+        lead += f" — {message}"
+    lines = [lead]
+
+    artifacts = hit.get("artifacts") if isinstance(hit.get("artifacts"), dict) else {}
+    urls = artifacts.get("urls") or []
+    domains = artifacts.get("domains") or []
+    ips = artifacts.get("ips") or []
+    commands = artifacts.get("commands") or []
+
+    if urls:
+        lines.append(f"  - **URL:** `{urls[0]}`" + (f" (+{len(urls) - 1} more)" if len(urls) > 1 else ""))
+    if domains:
+        lines.append(
+            f"  - **Domain:** `{domains[0]}`" + (f" (+{len(domains) - 1} more)" if len(domains) > 1 else "")
+        )
+    if ips:
+        lines.append(f"  - **IP:** `{ips[0]}`" + (f" (+{len(ips) - 1} more)" if len(ips) > 1 else ""))
+    if commands:
+        lines.append(
+            f"  - **Command:** `{commands[0][:160]}`"
+            + (f" (+{len(commands) - 1} more)" if len(commands) > 1 else "")
+        )
+
+    if not urls and not domains and not ips and not commands:
+        snippet = str(hit.get("snippet") or "").strip()
+        if snippet:
+            lines.append(f"  - **Line:** `{snippet[:160]}`")
+
+    return lines
+
+
 def _format_package_risk_card(item: dict[str, Any]) -> list[str]:
     spec = str(item.get("package_spec") or "unknown")
     summ = _item_summary(item)
@@ -90,14 +132,7 @@ def _format_package_risk_card(item: dict[str, Any]) -> list[str]:
         for hit in evidence:
             if not isinstance(hit, dict):
                 continue
-            rid = hit.get("rule_id", "")
-            fpath = hit.get("file", "")
-            line_no = hit.get("line", "")
-            count = hit.get("count", 1)
-            snippet = str(hit.get("snippet") or "")[:120]
-            loc = f"`{fpath}:{line_no}`" if fpath else ""
-            cnt = f" ×{count}" if int(count or 1) > 1 else ""
-            lines.append(f"- `{rid}`{cnt} {loc} — {snippet}")
+            lines.extend(_format_evidence_hit(hit))
         lines.append("")
         lines.append("</details>")
         lines.append("")
