@@ -39,6 +39,11 @@ def _block_reason(item: dict[str, Any]) -> str:
     if summ.get("risk_tldr"):
         return str(summ["risk_tldr"])
     parts: list[str] = []
+    eph = item.get("ephemeral_source") if isinstance(item.get("ephemeral_source"), dict) else None
+    if eph:
+        parts.append(
+            f"Ephemeral install at `{eph.get('file')}:{eph.get('line')}`"
+        )
     if summ.get("ioc_hit"):
         src = summ.get("ioc_source") or "tenant IOC"
         parts.append(f"Tenant IOC match ({src})")
@@ -108,6 +113,15 @@ def _format_package_risk_card(item: dict[str, Any]) -> list[str]:
         lines.append("")
     elif resolution_source == "compile":
         lines.append(f"**Resolved:** `{spec}` (compiled manifest)")
+        lines.append("")
+    elif resolution_source == "ephemeral":
+        eph = item.get("ephemeral_source") if isinstance(item.get("ephemeral_source"), dict) else {}
+        src_file = escape_markdown_inline(str(eph.get("file") or ""))
+        src_line = eph.get("line", "")
+        cmd = escape_markdown_inline(str(eph.get("command") or "")[:120])
+        lines.append(f"**Ephemeral source:** `{src_file}:{src_line}` — `{cmd}`")
+        if item.get("ephemeral_unpinned"):
+            lines.append("**Note:** unpinned ephemeral install (warn only)")
         lines.append("")
     tldr = escape_markdown_inline(str(summ.get("risk_tldr") or _block_reason(item)))
     lines.append(f"**TL;DR:** {tldr}")
@@ -258,6 +272,38 @@ def format_summary_markdown(
                 f"{escape_markdown_cell(str(f.get('message') or ''))} |"
             )
         lines.append("")
+        lines.append("</details>")
+        lines.append("")
+
+    ephemeral_items = [
+        item for item in items if str(item.get("resolution_source") or "") == "ephemeral"
+    ]
+    if ephemeral_items:
+        bootstrap = bool(rollup.get("ephemeral_bootstrap"))
+        lines.append("<details>")
+        title = f"Ephemeral dependencies (not in lockfile) ({len(ephemeral_items)})"
+        lines.append(f"<summary><strong>{title}</strong></summary>")
+        lines.append("")
+        if bootstrap:
+            lines.append(
+                "> First Chaintrap scan — full baseline of workflows and install scripts."
+            )
+            lines.append("")
+        for eco, eco_items in sorted(_group_by_ecosystem(ephemeral_items).items()):
+            lines.append(f"#### {eco}")
+            lines.append("")
+            lines.append("| Package | Source | Verdict |")
+            lines.append("| --- | --- | --- |")
+            for item in eco_items:
+                spec = escape_markdown_inline(str(item.get("package_spec") or ""))
+                summ = _item_summary(item)
+                verdict = str(summ.get("verdict_level") or "PASS")
+                eph = item.get("ephemeral_source") if isinstance(item.get("ephemeral_source"), dict) else {}
+                src = escape_markdown_inline(
+                    f"{eph.get('file', '')}:{eph.get('line', '')}"
+                )
+                lines.append(f"| `{spec}` | `{src}` | {verdict} |")
+            lines.append("")
         lines.append("</details>")
         lines.append("")
 

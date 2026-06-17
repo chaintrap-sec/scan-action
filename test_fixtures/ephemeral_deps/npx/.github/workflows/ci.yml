@@ -1,0 +1,7 @@
+name: ephemeral-npx
+on: push
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: npx -y nx@20.9.0

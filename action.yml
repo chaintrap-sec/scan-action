@@ -81,6 +81,10 @@ inputs:
     description: Compile unpinned requirements.txt / package.json (auto | true | false)
     required: false
     default: auto
+  ephemeral-scan:
+    description: Scan ephemeral installs in workflows, scripts, Dockerfiles (npx, pip, uvx)
+    required: false
+    default: "true"
 
 outputs:
   scan-id:
@@ -111,7 +115,8 @@ runs:
         pip install -q --require-hashes -r "${{ github.action_path }}/requirements-runtime.txt"
         pip install -q --no-deps \
                     -e "${{ github.action_path }}/vendor/chaintrap-static-scan" \
-                    -e "${{ github.action_path }}/vendor/chaintrap-ci"
+                    -e "${{ github.action_path }}/vendor/chaintrap-ci" \
+                    -e "${{ github.action_path }}/vendor/chaintrap-guard"
 
     - name: Set up uv
       if: inputs.resolve-manifests != 'false'
@@ -142,6 +147,7 @@ runs:
         CHAINTRAP_FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
         CHAINTRAP_CONTENT_SCAN: ${{ inputs.content-scan }}
         CHAINTRAP_RESOLVE_MANIFESTS: ${{ inputs.resolve-manifests }}
+        CHAINTRAP_EPHEMERAL_SCAN: ${{ inputs.ephemeral-scan }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_REF_NAME: ${{ github.head_ref || github.ref_name }}
         GITHUB_BASE_REF: ${{ github.base_ref }}
@@ -189,6 +195,7 @@ runs:
           --fail-on-error "${CHAINTRAP_FAIL_ON_ERROR}" \
           --content-scan "${CHAINTRAP_CONTENT_SCAN}" \
           --resolve-manifests "${CHAINTRAP_RESOLVE_MANIFESTS:-auto}" \
+          --ephemeral-scan "${CHAINTRAP_EPHEMERAL_SCAN:-true}" \
           --sarif-output "${SARIF_FILE}" \
           --summary-output "${SUMMARY_FILE}" \
           --step-summary "${GITHUB_STEP_SUMMARY}" \

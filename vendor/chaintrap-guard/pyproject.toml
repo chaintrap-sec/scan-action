@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chaintrap-guard"
+version = "0.1.1"
+description = "Workstation guard: block npm/pip installs using Chaintrap OSV intel (PMG-style, no SafeDep)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "chaintrap-static-scan>=0.1.0",
+]
+
+[project.scripts]
+chaintrap-guard = "chaintrap_guard.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+chaintrap_guard = ["config.template.yml"]

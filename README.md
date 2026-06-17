@@ -18,6 +18,7 @@ Attackers hide bad code in install scripts, fake package names, and freshly publ
 | Check | What it does |
 | --- | --- |
 | **Known malicious package scan** | Blocks packages already flagged as malware |
+| **Ephemeral install scan** | Catches `npx`, `pip install`, `uvx`, and similar one-liners in CI that never hit your lockfile |
 | **Package code scan** | Looks inside **new** dependencies for suspicious links, domains, and commands |
 | **CI workflow check** | Flags risky GitHub Actions setup in your repo |
 | **Risk signals** | Warns on brand-new releases, install scripts, and lookalike package names |
@@ -95,7 +96,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: chaintrap-sec/scan-action@v1.3.0
+      - uses: chaintrap-sec/scan-action@v1.4.0
         id: chaintrap
 
       - uses: github/codeql-action/upload-sarif@9f79dc6d9c6f86b98b12a5d675b21943e316e423 # v3.28.0
@@ -143,14 +144,14 @@ The second optional step sends findings to the **GitHub Security** tab. The thir
 
 | Pin style | When to use |
 | --- | --- |
-| `@v1.3.0` | Latest release — includes security hardening |
+| `@v1.4.0` | Latest release — ephemeral dependency discovery |
 | `@v1` | Always get the newest v1.x |
 | `@<full-commit-sha>` | Lock the action to an exact version |
 
 Pin third-party steps (`checkout`, `upload-sarif`, `github-script`) to commit SHAs as shown above.
 
 ```yaml
-- uses: chaintrap-sec/scan-action@v1.3.0
+- uses: chaintrap-sec/scan-action@v1.4.0
 ```
 
 Want the scan without the PR comment? See [examples/minimal-workflow.yml](examples/minimal-workflow.yml).
@@ -164,6 +165,7 @@ Want the scan without the PR comment? See [examples/minimal-workflow.yml](exampl
 Works immediately:
 
 - **Known malicious package scan** — blocks packages on public malware lists
+- **Ephemeral install scan** — finds malicious packages in lockfiles **and** in CI install one-liners (`npx`, `pip install`, `uvx`) that never hit your manifest
 - **Package code scan** — downloads and inspects **new** dependencies on the PR (then deletes them)
 - **CI workflow check** — reviews `.github/workflows` for common misconfigurations
 
@@ -178,6 +180,8 @@ Optional: connect your own private blocklist — [docs/IOC_PARTNER_ONBOARDING.md
 | Known malicious package | **Block** |
 | Private blocklist match (optional) | **Block** |
 | Suspicious code in a new package | **Block** |
+| Ephemeral install with HIGH/CRITICAL code signals | **Block** |
+| Unpinned ephemeral install (`pip install requests`) | Warn |
 | Risky CI workflow setup | **Block** |
 | Known security vulnerabilities | Warn |
 | Package published in the last 7 days | Warn |
@@ -201,11 +205,41 @@ gates:
   block_install_scripts: false
   fail_on_error: false
   content_scan: true
+  ephemeral_scan: true
 ignore:
   packages:
     - left-pad@1.0.0
   rules:
     - CTH-003
+```
+
+---
+
+## Ephemeral dependencies (shadow installs)
+
+Many repos install packages only in CI — never in `package.json` or `requirements.txt`:
+
+```yaml
+# .github/workflows/ci.yml
+- run: npx eslint@8.57.0 .
+- run: pip install ruff==0.4.0
+- run: uvx black@24.3.0
+```
+
+Chaintrap v1.4 scans these **ephemeral** installs from:
+
+- GitHub Actions `run:` blocks
+- `package.json` `scripts`
+- `Dockerfile` `RUN` lines
+- Shell scripts and Makefiles (capped)
+
+On normal PRs, only **changed** workflow/script lines are scanned. The **first Chaintrap PR** in a repo runs a full baseline. Ephemeral entries already in your lockfile are hidden.
+
+Disable with `ephemeral-scan: "false"` or `.chaintrap.yml`:
+
+```yaml
+gates:
+  ephemeral_scan: false
 ```
 
 ---
@@ -244,6 +278,7 @@ Details: [docs/PRIVACY.md](docs/PRIVACY.md).
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `content-scan` | `true` | Inspect code inside new packages |
+| `ephemeral-scan` | `true` | Scan `npx` / `pip install` / `uvx` in workflows and scripts |
 | `resolve-manifests` | `auto` | Resolve unpinned `package.json` / `requirements.txt` |
 | `audit-workflows` | `true` | Check `.github/workflows` |
 | `diff-mode` | `auto` | PR = only what changed; push to main = full scan |

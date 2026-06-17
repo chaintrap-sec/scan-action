@@ -1,0 +1,8 @@
+{
+  "name": "ephemeral-scripts",
+  "private": true,
+  "scripts": {
+    "lint": "npx eslint@8.57.0 .",
+    "setup": "pip install flask==3.0.0"
+  }
+}

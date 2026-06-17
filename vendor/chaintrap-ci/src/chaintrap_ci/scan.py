@@ -15,6 +15,8 @@ from chaintrap_static_scan.pipeline import scan_packages
 
 from chaintrap_ci.discover import discover
 from chaintrap_ci.discover_diff import discover_added_packages
+from chaintrap_ci.ephemeral_discover import discover_ephemeral, hide_ephemeral_in_lockfile
+from chaintrap_ci.ephemeral_discover_diff import discover_ephemeral_for_pr
 from chaintrap_ci.ioc_client import fetch_org_iocs
 from chaintrap_ci.parse import ioc_lookup_key, split_package_spec
 from chaintrap_ci.risk_narrative import enrich_summary_with_risk_narrative, has_block_tier_content
@@ -49,6 +51,7 @@ class ScanConfig:
     fail_on_error: bool = False
     content_scan_enabled: bool = True
     content_scan_max_packages: int = 30
+    ephemeral_scan_enabled: bool = True
     resolve_manifests: str = "auto"  # auto | true | false
     ignored_packages: set[str] = field(default_factory=set)
     ignored_rules: set[str] = field(default_factory=set)
@@ -87,6 +90,19 @@ def _summary_for_item(
     kb = known_bad_hit
 
     if finding.query_error:
+        if kb:
+            base = {
+                "verdict_level": "BLOCK",
+                "malware_risk": "CRITICAL",
+                "vulnerability_risk": "NONE",
+                "osv_error": finding.query_error,
+                "ioc_hit": False,
+                "heuristic_findings": heur,
+                "content_findings": content,
+                "known_bad_hit": True,
+                "known_bad_finding": kb,
+            }
+            return enrich_summary_with_risk_narrative(base, content, known_bad=True)
         base = {
             "verdict_level": "WARN",
             "malware_risk": "—",
@@ -180,7 +196,7 @@ def _item_worst_severity(item: dict[str, Any]) -> str:
     return best if best_r >= 0 else "UNKNOWN"
 
 
-def _should_block_item(summ: dict[str, Any], cfg: ScanConfig) -> bool:
+def _should_block_item(summ: dict[str, Any], cfg: ScanConfig, *, is_ephemeral: bool = False) -> bool:
     ioc_blocks = (cfg.fail_on_ioc or "block").strip().lower() != "none"
     if summ.get("ioc_hit") and ioc_blocks:
         return True
@@ -190,8 +206,20 @@ def _should_block_item(summ: dict[str, Any], cfg: ScanConfig) -> bool:
         return True
     if cfg.fail_on_mal and has_block_tier_content(summ):
         return True
+    if is_ephemeral and cfg.fail_on_mal and _ephemeral_content_blocks(summ):
+        return True
     for hit in summ.get("heuristic_findings") or []:
         if isinstance(hit, dict) and _should_block_heuristic(hit, cfg):
+            return True
+    return False
+
+
+def _ephemeral_content_blocks(summ: dict[str, Any]) -> bool:
+    for hit in summ.get("content_findings") or []:
+        if not isinstance(hit, dict):
+            continue
+        sev = str(hit.get("severity") or "LOW").upper()
+        if sev in ("HIGH", "CRITICAL"):
             return True
     return False
 
@@ -240,9 +268,11 @@ def evaluate_scan_rollup(
         enriched["_worst_severity"] = worst
         enriched["_severity_rank"] = rank
 
-        if _should_block_item(summ, cfg):
+        if _should_block_item(summ, cfg, is_ephemeral=item.get("resolution_source") == "ephemeral"):
             blocked.append(enriched)
-        elif _should_warn_item(summ, cfg, cve_threshold):
+        elif _should_warn_item(summ, cfg, cve_threshold) or item.get("ephemeral_unpinned"):
+            if item.get("ephemeral_unpinned"):
+                enriched["_ephemeral_unpinned"] = True
             warned.append(enriched)
 
     bundle_status = str(rollup.get("bundle_status") or "")
@@ -320,6 +350,32 @@ def run_local_scan(
             resolve_manifests=resolve_on,
         )
 
+    ephemeral_items: list[dict[str, Any]] = []
+    ephemeral_mode = ""
+    ephemeral_bootstrap = False
+    if cfg.ephemeral_scan_enabled:
+        remaining = max(0, max_packages - len(discovered))
+        if cfg.diff_mode and cfg.base_ref:
+            ephemeral_items, ephemeral_mode, ephemeral_bootstrap = discover_ephemeral_for_pr(
+                workspace,
+                base_ref=cfg.base_ref,
+                ecosystems=eco_set,
+                paths=paths,
+                max_items=remaining if remaining else max_packages,
+            )
+        else:
+            ephemeral_items, ephemeral_mode = discover_ephemeral(
+                workspace,
+                paths=paths,
+                ecosystems=eco_set,
+                max_items=remaining if remaining else max_packages,
+            )
+        ephemeral_items = hide_ephemeral_in_lockfile(ephemeral_items, discovered)
+        if ephemeral_mode:
+            discovery_mode = f"{discovery_mode}+{ephemeral_mode}" if discovered else ephemeral_mode
+
+    discovered = list(discovered) + ephemeral_items
+
     if not discovered:
         # Not an error: a PR with no dependency changes (diff mode) or a repo
         # without lockfiles (full mode) is a clean pass, and the workflow
@@ -337,6 +393,8 @@ def run_local_scan(
             "package_count": 0,
             "discovery_mode": discovery_mode,
             "resolution_warnings": resolution_warnings,
+            "ephemeral_bootstrap": ephemeral_bootstrap,
+            "ephemeral_count": 0,
         }
 
     keys: list[PackageKey] = []
@@ -357,6 +415,8 @@ def run_local_scan(
                 "lockfile": str(row.get("lockfile_path") or row.get("lockfile") or ""),
                 "resolution_source": row.get("resolution_source"),
                 "declared_constraint": row.get("declared_constraint"),
+                "ephemeral_source": row.get("ephemeral_source"),
+                "ephemeral_unpinned": bool(row.get("ephemeral_unpinned")),
             }
         )
 
@@ -381,10 +441,17 @@ def run_local_scan(
         return workflow_findings_to_content_hits(audit_bundled_workflows(dest))
 
     content_map: dict[tuple[str, str, str], dict[str, Any]] = {}
-    if cfg.content_scan_enabled and cfg.diff_mode:
-        pkg_tuples = [(r["ecosystem"], r["name"], r["version"]) for r in parsed_items]
+    run_content = cfg.content_scan_enabled and (cfg.diff_mode or ephemeral_bootstrap)
+    if run_content:
+        content_targets: list[tuple[str, str, str]] = []
+        for r in parsed_items:
+            src = r.get("resolution_source")
+            if src == "ephemeral":
+                content_targets.append((r["ecosystem"], r["name"], r["version"]))
+            elif cfg.diff_mode and src != "ephemeral":
+                content_targets.append((r["ecosystem"], r["name"], r["version"]))
         content_map = scan_packages_content(
-            pkg_tuples,
+            content_targets,
             max_packages=cfg.content_scan_max_packages,
             extra_findings_fn=_bundled_wf_findings,
         )
@@ -427,6 +494,8 @@ def run_local_scan(
                 "lockfile": row.get("lockfile") or None,
                 "resolution_source": row.get("resolution_source"),
                 "declared_constraint": row.get("declared_constraint"),
+                "ephemeral_source": row.get("ephemeral_source"),
+                "ephemeral_unpinned": row.get("ephemeral_unpinned"),
                 "summary": _summary_for_item(
                     ecosystem=row["ecosystem"],
                     package_spec=row["package_spec"],
@@ -440,7 +509,7 @@ def run_local_scan(
         )
 
     scan_mode = f"runner-osv-ioc-{discovery_mode}"
-    if cfg.content_scan_enabled and cfg.diff_mode:
+    if run_content:
         scan_mode += "-content"
 
     return {
@@ -455,4 +524,6 @@ def run_local_scan(
         "package_count": len(rollup_items),
         "discovery_mode": discovery_mode,
         "resolution_warnings": resolution_warnings,
+        "ephemeral_bootstrap": ephemeral_bootstrap,
+        "ephemeral_count": len(ephemeral_items),
     }

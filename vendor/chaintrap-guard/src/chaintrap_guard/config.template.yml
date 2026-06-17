@@ -1,0 +1,15 @@
+# Chaintrap Guard — copy to ~/.config/chaintrap-guard/config.yml
+
+paranoid: false
+strict: false
+trusted_packages: []
+host: local
+
+# Default when Chaintrap Watch is installed: %LOCALAPPDATA%\ChaintrapWatchApp\osv_static_scan.sqlite
+# osv_db_path: C:\Users\you\AppData\Local\ChaintrapWatchApp\osv_static_scan.sqlite
+
+resolve_latest: true
+passthrough_unknown: true
+dry_run: false
+
+# watch_refresh_url: http://127.0.0.1:8765/api/dashboard/refresh

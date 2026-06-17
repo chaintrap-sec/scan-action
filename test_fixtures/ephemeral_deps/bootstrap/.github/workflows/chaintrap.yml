@@ -1,0 +1,9 @@
+name: chaintrap
+on: pull_request
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: chaintrap-sec/scan-action@v1
+        with:
+          ephemeral-scan: "true"

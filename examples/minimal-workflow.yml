@@ -19,7 +19,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: chaintrap-sec/scan-action@v1.3.0
+      - uses: chaintrap-sec/scan-action@v1.4.0
         id: chaintrap
 
       - uses: github/codeql-action/upload-sarif@9f79dc6d9c6f86b98b12a5d675b21943e316e423 # v3.28.0

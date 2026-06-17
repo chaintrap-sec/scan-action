@@ -26,6 +26,7 @@ class ChaintrapPolicy:
     audit_workflows: bool = True
     fail_on_error: bool = False
     content_scan: bool = True
+    ephemeral_scan: bool = True
     # Egress policy (wired to CTW-016)
     egress_allow: list[str] = field(default_factory=list)
     egress_block_unlisted: bool = False
@@ -83,6 +84,7 @@ def load_policy(workspace: Path) -> ChaintrapPolicy:
         audit_workflows=bool(raw.get("audit_workflows", True)),
         fail_on_error=bool(raw.get("fail_on_error", gates.get("fail_on_error", False))),
         content_scan=bool(raw.get("content_scan", gates.get("content_scan", True))),
+        ephemeral_scan=bool(raw.get("ephemeral_scan", gates.get("ephemeral_scan", True))),
         egress_allow=_as_list(egress.get("allow")),
         egress_block_unlisted=bool(egress.get("block_unlisted", False)),
     )

@@ -2,6 +2,25 @@
 
 All notable changes to [chaintrap-sec/scan-action](https://github.com/chaintrap-sec/scan-action).
 
+## [1.4.0] - 2026-06-17
+
+### Added
+
+- **Ephemeral dependency discovery** — scan npm/PyPI installs in workflows, `package.json` scripts, Dockerfiles, and shell/Makefiles (`npx`, `pnpm dlx`, `pip install`, `uvx`, `pipx run`, and more)
+- Vendored **chaintrap-guard** parsers (`uvx`, `pipx`, `dlx`, `bunx`)
+- PR diff mode for ephemeral surfaces; **bootstrap full scan** on first Chaintrap PR
+- PR summary section: *Ephemeral dependencies (not in lockfile)*
+- Action input `ephemeral-scan` (default `true`) and `.chaintrap.yml` gate `gates.ephemeral_scan`
+- `tests/test_ephemeral_discover.py`, fixtures under `test_fixtures/ephemeral_deps/`, CI job `dogfood-ephemeral`
+- Architecture doc: [docs/EPHEMERAL_DEPS_V1.4.md](docs/EPHEMERAL_DEPS_V1.4.md)
+
+### Changed
+
+- Lockfile packages consume `max-packages` budget first; ephemeral fills the remainder
+- Ephemeral duplicates already in lockfile are hidden
+- Known-bad denylist blocks even when OSV lookup returns no result
+- Content scan runs on PR ephemeral packages (HIGH/CRITICAL block); unpinned ephemeral warns only
+
 ## [1.3.0] - 2026-06-17
 
 ### Security
@@ -57,6 +76,7 @@ All notable changes to [chaintrap-sec/scan-action](https://github.com/chaintrap-
 - SARIF + PR summary markdown outputs
 - Optional Supabase tenant IOC layer
 
+[1.4.0]: https://github.com/chaintrap-sec/scan-action/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/chaintrap-sec/scan-action/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/chaintrap-sec/scan-action/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/chaintrap-sec/scan-action/compare/v1...v1.2.0

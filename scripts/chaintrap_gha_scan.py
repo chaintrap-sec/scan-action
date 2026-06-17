@@ -41,9 +41,10 @@ def _gate_summary(cfg: ScanConfig) -> str:
     mal = "block" if cfg.fail_on_mal else "off"
     err = "block" if cfg.fail_on_error else "warn"
     content = "on" if cfg.content_scan_enabled else "off"
+    ephemeral = "on" if cfg.ephemeral_scan_enabled else "off"
     return (
         f"ioc={cfg.fail_on_ioc}, mal={mal}, cve={cfg.fail_on_cve}, "
-        f"diff={cfg.diff_mode}, content={content}, errors={err}"
+        f"diff={cfg.diff_mode}, content={content}, ephemeral={ephemeral}, errors={err}"
     )
 
 
@@ -88,6 +89,8 @@ def _merge_policy(cfg: ScanConfig, policy: ChaintrapPolicy, args: argparse.Names
         cfg.fail_on_error = True
     if cfg.content_scan_enabled and not policy.content_scan:
         cfg.content_scan_enabled = False
+    if cfg.ephemeral_scan_enabled and not policy.ephemeral_scan:
+        cfg.ephemeral_scan_enabled = False
     return cfg
 
 
@@ -127,6 +130,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["auto", "true", "false"],
         help="Compile unpinned requirements.txt / package.json on runner (uv/npm)",
     )
+    p.add_argument(
+        "--ephemeral-scan",
+        default="true",
+        choices=["true", "false"],
+        help="Discover ephemeral npm/PyPI installs in workflows and scripts",
+    )
     return p.parse_args(argv)
 
 
@@ -154,6 +163,7 @@ def run_scan(args: argparse.Namespace) -> int:
         fail_on_error=str(args.fail_on_error).lower() == "true",
         content_scan_enabled=str(args.content_scan).lower() == "true",
         resolve_manifests=str(args.resolve_manifests),
+        ephemeral_scan_enabled=str(args.ephemeral_scan).lower() == "true",
     )
     cfg = _merge_policy(cfg, policy, args)
 
