@@ -2,6 +2,27 @@
 
 All notable changes to [chaintrap-sec/scan-action](https://github.com/chaintrap-sec/scan-action).
 
+## [1.3.0] - 2026-06-17
+
+### Security
+
+- **`paths` input** cannot escape the workspace root
+- **PR summary / CI annotations** sanitize user-derived text (markdown and workflow commands)
+- **Tarball downloads** restricted to registry CDN hosts (npm/PyPI)
+- **Supabase IOC URL** must be a `*.supabase.co` / `*.supabase.in` host
+- **Optional API reporting** restricted to `*.chaintrap.com` (override via `CHAINTRAP_API_ALLOW_HOSTS`)
+- Blocked link-local and private IP targets for outbound HTTPS
+
+### Added
+
+- `tests/test_security_abuse.py` and CI jobs `security-abuse`, `dogfood-security-abuse`
+- [SECURITY.md](SECURITY.md) and [docs/SECURITY_TESTING.md](docs/SECURITY_TESTING.md)
+- Dependabot config for GitHub Actions
+
+### Changed
+
+- Examples and self-test workflows pin third-party actions to commit SHAs
+
 ## [1.2.1] - 2026-06-17
 
 ### Changed
@@ -36,5 +57,6 @@ All notable changes to [chaintrap-sec/scan-action](https://github.com/chaintrap-
 - SARIF + PR summary markdown outputs
 - Optional Supabase tenant IOC layer
 
+[1.3.0]: https://github.com/chaintrap-sec/scan-action/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/chaintrap-sec/scan-action/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/chaintrap-sec/scan-action/compare/v1...v1.2.0

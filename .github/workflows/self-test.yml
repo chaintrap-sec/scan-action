@@ -11,8 +11,8 @@ jobs:
   unit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630cee72586a086438c5c0a4 # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: "3.12"
       - run: pip install pytest pyyaml -e vendor/chaintrap-static-scan -e vendor/chaintrap-ci
@@ -21,17 +21,27 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630cee72586a086438c5c0a4 # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: "3.12"
       - run: pip install pytest pyyaml -e vendor/chaintrap-static-scan -e vendor/chaintrap-ci
       - run: pytest tests/ -q -k integration
 
+  security-abuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630cee72586a086438c5c0a4 # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pyyaml -e vendor/chaintrap-static-scan -e vendor/chaintrap-ci
+      - run: pytest tests/test_security_abuse.py -q
+
   dogfood-malicious:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630cee72586a086438c5c0a4 # v4.2.2
       - uses: ./
         id: scan
         with:
@@ -42,11 +52,32 @@ jobs:
         continue-on-error: true
       - run: test "${{ steps.scan.outputs.exit-code }}" = "2"
 
+  dogfood-security-abuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630cee72586a086438c5c0a4 # v4.2.2
+      - uses: ./
+        id: scan
+        with:
+          paths: test_fixtures/security_abuse
+          diff-mode: "false"
+          heuristics: "false"
+          audit-workflows: "false"
+          content-scan: "false"
+      - name: Summary marker is singular
+        run: |
+          COUNT=$(grep -c '<!-- chaintrap-sca -->' "${{ steps.scan.outputs.summary-file }}" || true)
+          test "$COUNT" = "1"
+      - name: No raw newlines in annotations path
+        run: |
+          test -f "${{ steps.scan.outputs.summary-file }}"
+          ! grep -q $'\n::' "${{ steps.scan.outputs.summary-file }}" || true
+
   content-scan-fixture:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630cee72586a086438c5c0a4 # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: "3.12"
       - run: pip install pytest pyyaml -e vendor/chaintrap-static-scan -e vendor/chaintrap-ci
@@ -55,8 +86,8 @@ jobs:
   sandbox:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630cee72586a086438c5c0a4 # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: "3.12"
       - run: pip install pyyaml -e vendor/chaintrap-static-scan -e vendor/chaintrap-ci
@@ -65,7 +96,7 @@ jobs:
   dogfood-workflow-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630cee72586a086438c5c0a4 # v4.2.2
       - uses: ./
         with:
           paths: test_fixtures/malicious_dep_test

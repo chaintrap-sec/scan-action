@@ -29,6 +29,13 @@ _VERDICT_MAP = {
 }
 
 
+def _safe_sarif_text(value: str, *, max_len: int = 500) -> str:
+    s = str(value or "").replace("\r", " ").replace("\n", " ")
+    if len(s) > max_len:
+        s = s[: max_len - 3] + "..."
+    return s
+
+
 def _norm_severity(raw: str) -> str:
     u = (raw or "").strip().upper()
     if u == "MODERATE":
@@ -88,7 +95,7 @@ def rollup_json_to_sarif(rollup: dict[str, Any]) -> dict[str, Any]:
                 {
                     "ruleId": rule_id,
                     "level": "error",
-                    "message": {"text": f"{spec}: {mal_id}"},
+                    "message": {"text": _safe_sarif_text(f"{spec}: {mal_id}")},
                     "locations": [
                         {
                             "physicalLocation": {
@@ -109,7 +116,7 @@ def rollup_json_to_sarif(rollup: dict[str, Any]) -> dict[str, Any]:
                 {
                     "ruleId": rule_id,
                     "level": "error",
-                    "message": {"text": f"{spec}: {kb.get('message') or 'known-bad denylist'}"},
+                    "message": {"text": _safe_sarif_text(f"{spec}: {kb.get('message') or 'known-bad denylist'}")},
                     "locations": [
                         {
                             "physicalLocation": {
@@ -129,7 +136,7 @@ def rollup_json_to_sarif(rollup: dict[str, Any]) -> dict[str, Any]:
                 {
                     "ruleId": rule_id,
                     "level": "error",
-                    "message": {"text": f"{spec}: IOC match"},
+                    "message": {"text": _safe_sarif_text(f"{spec}: IOC match")},
                     "locations": [
                         {
                             "physicalLocation": {
@@ -151,7 +158,7 @@ def rollup_json_to_sarif(rollup: dict[str, Any]) -> dict[str, Any]:
                 {
                     "ruleId": rule_id,
                     "level": _sarif_level(str(hit.get("severity") or "LOW")),
-                    "message": {"text": str(hit.get("message") or spec)},
+                    "message": {"text": _safe_sarif_text(str(hit.get("message") or spec))},
                     "locations": [
                         {
                             "physicalLocation": {
@@ -181,7 +188,7 @@ def rollup_json_to_sarif(rollup: dict[str, Any]) -> dict[str, Any]:
                 {
                     "ruleId": rule_id,
                     "level": _sarif_level(str(hit.get("severity") or "HIGH")),
-                    "message": {"text": msg_text},
+                    "message": {"text": _safe_sarif_text(msg_text)},
                     "locations": [
                         {
                             "physicalLocation": {
@@ -206,7 +213,7 @@ def rollup_json_to_sarif(rollup: dict[str, Any]) -> dict[str, Any]:
                 {
                     "ruleId": rule_id,
                     "level": "warning",
-                    "message": {"text": f"{spec}: {summ.get('osv_error')}"},
+                    "message": {"text": _safe_sarif_text(f"{spec}: {summ.get('osv_error')}")},
                     "locations": [
                         {
                             "physicalLocation": {
@@ -226,7 +233,7 @@ def rollup_json_to_sarif(rollup: dict[str, Any]) -> dict[str, Any]:
                 {
                     "ruleId": rule_id,
                     "level": "warning",
-                    "message": {"text": f"{spec}: {vuln_id}"},
+                    "message": {"text": _safe_sarif_text(f"{spec}: {vuln_id}")},
                     "locations": [
                         {
                             "physicalLocation": {
@@ -253,7 +260,7 @@ def rollup_json_to_sarif(rollup: dict[str, Any]) -> dict[str, Any]:
             {
                 "ruleId": rule_id,
                 "level": _sarif_level(str(wf.get("severity") or "MEDIUM")),
-                "message": {"text": str(wf.get("message") or rule_id)},
+                "message": {"text": _safe_sarif_text(str(wf.get("message") or rule_id))},
                 "locations": [
                     {
                         "physicalLocation": {

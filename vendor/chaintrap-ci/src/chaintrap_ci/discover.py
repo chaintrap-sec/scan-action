@@ -349,6 +349,10 @@ def _resolve_search_dirs(root: Path, paths: str) -> list[Path]:
         if not part:
             continue
         candidate = (root / part).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            continue
         if candidate.is_dir():
             dirs.append(candidate)
     return dirs or [root]

@@ -19,6 +19,8 @@ for _p in (_CI_SRC, _STATIC_SRC, _SCRIPTS):
         sys.path.insert(0, str(_p))
 
 from chaintrap_ci.scan import ScanConfig, evaluate_scan_rollup, run_local_scan  # noqa: E402
+from chaintrap_ci.security_sanitize import sanitize_gha_field  # noqa: E402
+from chaintrap_static_scan.url_policy import validate_api_report_url  # noqa: E402
 from chaintrap_ci.summary import format_summary_markdown  # noqa: E402
 from chaintrap_policy import ChaintrapPolicy, load_policy  # noqa: E402
 from chaintrap_sarif import rollup_json_to_sarif  # noqa: E402
@@ -46,22 +48,27 @@ def _gate_summary(cfg: ScanConfig) -> str:
 
 
 def gh_actions_error_annotation(item: dict[str, Any]) -> str:
-    spec = str(item.get("package_spec") or "unknown")
-    eco = str(item.get("ecosystem") or "")
-    worst = str(item.get("_worst_severity") or "UNKNOWN")
-    title = f"Chaintrap blocked {eco} package".strip()
-    msg = f"{spec} — severity {worst}"
+    spec = sanitize_gha_field(str(item.get("package_spec") or "unknown"))
+    eco = sanitize_gha_field(str(item.get("ecosystem") or ""))
+    worst = sanitize_gha_field(str(item.get("_worst_severity") or "UNKNOWN"))
+    title = sanitize_gha_field(f"Chaintrap blocked {eco} package".strip())
+    msg = sanitize_gha_field(f"{spec} — severity {worst}")
     return f"::error title={title}::{msg}"
 
 
 def gh_actions_workflow_annotation(finding: dict[str, Any]) -> str:
-    rule = str(finding.get("rule_id") or "CTW")
+    rule = sanitize_gha_field(str(finding.get("rule_id") or "CTW"))
     sev = str(finding.get("severity") or "MEDIUM").upper()
-    msg = str(finding.get("message") or rule)
-    file = str(finding.get("file") or "")
+    msg = sanitize_gha_field(str(finding.get("message") or rule))
+    file = sanitize_gha_field(str(finding.get("file") or ""))
+    line = finding.get("line", 1)
+    try:
+        line = int(line)
+    except (TypeError, ValueError):
+        line = 1
     if sev in ("CRITICAL", "HIGH"):
-        return f"::error file={file},line={finding.get('line', 1)}::{rule}: {msg}"
-    return f"::warning file={file},line={finding.get('line', 1)}::{rule}: {msg}"
+        return f"::error file={file},line={line}::{rule}: {msg}"
+    return f"::warning file={file},line={line}::{rule}: {msg}"
 
 
 def _merge_policy(cfg: ScanConfig, policy: ChaintrapPolicy, args: argparse.Namespace) -> ScanConfig:
@@ -244,39 +251,42 @@ def run_scan(args: argparse.Namespace) -> int:
     api_url = getattr(args, "api_url", "") or os.environ.get("CHAINTRAP_API_URL", "")
     api_key = getattr(args, "api_key", "") or os.environ.get("CHAINTRAP_API_KEY", "")
     if api_url and api_key:
-        try:
-            findings_payload = []
-            for item in (rollup.get("findings") or []):
-                findings_payload.append({
-                    "ecosystem": item.get("ecosystem", "npm"),
-                    "package_name": item.get("package", ""),
-                    "package_version": item.get("version"),
-                    "severity": (item.get("severity") or "UNKNOWN").upper(),
-                    "category": item.get("category"),
-                    "message": item.get("message"),
-                })
-            payload = {
-                "org_id": args.org_id or os.environ.get("CHAINTRAP_ORG_ID", "default"),
-                "repo_full_name": args.repo or os.environ.get("GITHUB_REPOSITORY", ""),
-                "ref": args.ref or os.environ.get("GITHUB_REF_NAME", ""),
-                "sha": os.environ.get("GITHUB_SHA", ""),
-                "scan_id": "",
-                "findings": findings_payload,
-                "workflow_findings_count": len(workflow_findings),
-            }
-            import urllib.request
-            import json as _json
-            req = urllib.request.Request(
-                f"{api_url.rstrip('/')}/api/v1/ci/report",
-                data=_json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json", "X-API-Key": api_key},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                _ = resp.read()
-        except Exception:
-            # fail-open
-            pass
+        policy_err = validate_api_report_url(api_url)
+        if policy_err:
+            print(f"::warning::Chaintrap API report skipped: {policy_err}")
+        else:
+            try:
+                findings_payload = []
+                for item in (rollup.get("findings") or []):
+                    findings_payload.append({
+                        "ecosystem": item.get("ecosystem", "npm"),
+                        "package_name": item.get("package", ""),
+                        "package_version": item.get("version"),
+                        "severity": (item.get("severity") or "UNKNOWN").upper(),
+                        "category": item.get("category"),
+                        "message": item.get("message"),
+                    })
+                payload = {
+                    "org_id": args.org_id or os.environ.get("CHAINTRAP_ORG_ID", "default"),
+                    "repo_full_name": args.repo or os.environ.get("GITHUB_REPOSITORY", ""),
+                    "ref": args.ref or os.environ.get("GITHUB_REF_NAME", ""),
+                    "sha": os.environ.get("GITHUB_SHA", ""),
+                    "scan_id": "",
+                    "findings": findings_payload,
+                    "workflow_findings_count": len(workflow_findings),
+                }
+                import urllib.request
+                import json as _json
+                req = urllib.request.Request(
+                    f"{api_url.rstrip('/')}/api/v1/ci/report",
+                    data=_json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "X-API-Key": api_key},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    _ = resp.read()
+            except Exception as exc:
+                print(f"::warning::Chaintrap API report failed: {sanitize_gha_field(str(exc))}")
 
     return exit_code
 

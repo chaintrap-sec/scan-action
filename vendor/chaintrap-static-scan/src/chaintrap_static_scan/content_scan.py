@@ -15,6 +15,7 @@ from typing import Any
 
 from chaintrap_static_scan.http_utils import http_get_bytes, http_get_json
 from chaintrap_static_scan.pattern_scanner import hits_to_dicts, scan_tree
+from chaintrap_static_scan.url_policy import validate_npm_tarball_url, validate_pypi_artifact_url
 
 _log = logging.getLogger(__name__)
 
@@ -154,7 +155,12 @@ def _download_and_extract(
     dest: Path,
     *,
     max_bytes: int,
+    url_validator: Callable[[str], str | None] | None = None,
 ) -> str | None:
+    if url_validator is not None:
+        err = url_validator(url)
+        if err:
+            return err
     data, err = http_get_bytes(url, max_bytes=max_bytes)
     if err or data is None:
         return err or "download failed"
@@ -198,7 +204,11 @@ def scan_package_content(
 
     with tempfile.TemporaryDirectory(prefix="chaintrap_content_") as td:
         dest = Path(td)
-        dl_err = _download_and_extract(url, dest, max_bytes=max_bytes)
+        if eco == "npm":
+            validator = lambda u: validate_npm_tarball_url(u, registry_base=_npm_registry_base())
+        else:
+            validator = lambda u: validate_pypi_artifact_url(u, pypi_base=_pypi_base())
+        dl_err = _download_and_extract(url, dest, max_bytes=max_bytes, url_validator=validator)
         if dl_err:
             return [], dl_err
         findings = scan_extracted_tree(dest, eco)

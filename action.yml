@@ -195,7 +195,7 @@ runs:
           || EC=$?
         SCAN_ID=""
         if [ -f "${SUMMARY_FILE}" ]; then
-          SCAN_ID=$(grep -m1 '^\*\*Scan:\*\*' "${SUMMARY_FILE}" | sed 's/.*`\([^`]*\)`.*/\1/' || true)
+          SCAN_ID=$(grep -m1 '| Scan ID |' "${SUMMARY_FILE}" | sed -n 's/.*`\([^`]*\)`.*/\1/p' | tr -d '\n\r' || true)
         fi
         echo "scan_id=${SCAN_ID}" >> "$GITHUB_OUTPUT"
         echo "sarif_file=${SARIF_FILE}" >> "$GITHUB_OUTPUT"

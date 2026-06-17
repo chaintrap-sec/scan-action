@@ -91,21 +91,21 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630cee72586a086438c5c0a4 # v4.2.2
         with:
           fetch-depth: 0
 
-      - uses: chaintrap-sec/scan-action@v1.2.1
+      - uses: chaintrap-sec/scan-action@v1.3.0
         id: chaintrap
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@9f79dc6d9c6f86b98b12a5d675b21943e316e423 # v3.28.0
         if: always()
         continue-on-error: true
         with:
           sarif_file: ${{ steps.chaintrap.outputs.sarif-file }}
           category: chaintrap
 
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@60a0d83039a663e4b626ae7ca9eb36527b582617 # v7.0.1
         if: github.event_name == 'pull_request' && always()
         with:
           script: |
@@ -143,15 +143,19 @@ The second optional step sends findings to the **GitHub Security** tab. The thir
 
 | Pin style | When to use |
 | --- | --- |
-| `@v1.2.1` | Latest release — easy to upgrade |
+| `@v1.3.0` | Latest release — includes security hardening |
 | `@v1` | Always get the newest v1.x |
 | `@<full-commit-sha>` | Lock the action to an exact version |
 
+Pin third-party steps (`checkout`, `upload-sarif`, `github-script`) to commit SHAs as shown above.
+
 ```yaml
-- uses: chaintrap-sec/scan-action@e0b01c0  # v1.2.1
+- uses: chaintrap-sec/scan-action@v1.3.0
 ```
 
 Want the scan without the PR comment? See [examples/minimal-workflow.yml](examples/minimal-workflow.yml).
+
+**Least privilege:** the scan step only needs `contents: read`. Add `pull-requests: write` only if you post PR comments; add `security-events: write` only if you upload to the GitHub Security tab.
 
 ---
 
@@ -252,6 +256,8 @@ Full list: [action.yml](action.yml).
 
 ## Docs & releases
 
+- [Security policy](SECURITY.md)
+- [Security testing](docs/SECURITY_TESTING.md)
 - [Privacy](docs/PRIVACY.md)
 - [Private blocklist setup](docs/IOC_PARTNER_ONBOARDING.md)
 - [Changelog](CHANGELOG.md)

@@ -28,6 +28,11 @@ def fetch_org_iocs(
         return {}
     if not base.lower().startswith("https://"):
         raise RuntimeError("IOC endpoint must use https://")
+    from chaintrap_static_scan.url_policy import validate_supabase_url
+
+    policy_err = validate_supabase_url(base)
+    if policy_err:
+        raise RuntimeError(f"Supabase IOC URL rejected: {policy_err}")
 
     params = urllib.parse.urlencode(
         {

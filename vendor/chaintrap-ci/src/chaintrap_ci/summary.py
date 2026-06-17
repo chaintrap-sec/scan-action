@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import quote
 
 from chaintrap_static_scan.signal_tiers import THEME_LABELS
+from chaintrap_ci.security_sanitize import escape_markdown_cell, escape_markdown_inline
 
 
 def _item_summary(item: dict[str, Any]) -> dict[str, Any]:
@@ -51,11 +52,11 @@ def _block_reason(item: dict[str, Any]) -> str:
 
 def _format_evidence_hit(hit: dict[str, Any]) -> list[str]:
     """Render one evidence hit with optional defanged artifact sub-bullets."""
-    rid = hit.get("rule_id", "")
-    fpath = hit.get("file", "")
+    rid = escape_markdown_inline(str(hit.get("rule_id", "")))
+    fpath = escape_markdown_inline(str(hit.get("file", "")))
     line_no = hit.get("line", "")
     count = hit.get("count", 1)
-    message = str(hit.get("message") or "").strip()
+    message = escape_markdown_inline(str(hit.get("message") or "").strip())
     loc = f"`{fpath}:{line_no}`" if fpath else ""
     cnt = f" ×{count}" if int(count or 1) > 1 else ""
     lead = f"- `{rid}`{cnt} {loc}"
@@ -84,7 +85,7 @@ def _format_evidence_hit(hit: dict[str, Any]) -> list[str]:
         )
 
     if not urls and not domains and not ips and not commands:
-        snippet = str(hit.get("snippet") or "").strip()
+        snippet = escape_markdown_inline(str(hit.get("snippet") or "").strip())
         if snippet:
             lines.append(f"  - **Line:** `{snippet[:160]}`")
 
@@ -92,7 +93,7 @@ def _format_evidence_hit(hit: dict[str, Any]) -> list[str]:
 
 
 def _format_package_risk_card(item: dict[str, Any]) -> list[str]:
-    spec = str(item.get("package_spec") or "unknown")
+    spec = escape_markdown_inline(str(item.get("package_spec") or "unknown"))
     summ = _item_summary(item)
     verdict = str(summ.get("verdict_level") or "PASS")
     score = summ.get("risk_score")
@@ -108,7 +109,7 @@ def _format_package_risk_card(item: dict[str, Any]) -> list[str]:
     elif resolution_source == "compile":
         lines.append(f"**Resolved:** `{spec}` (compiled manifest)")
         lines.append("")
-    tldr = summ.get("risk_tldr") or _block_reason(item)
+    tldr = escape_markdown_inline(str(summ.get("risk_tldr") or _block_reason(item)))
     lines.append(f"**TL;DR:** {tldr}")
     lines.append("")
     themes = summ.get("risk_themes") if isinstance(summ.get("risk_themes"), dict) else {}
@@ -137,7 +138,7 @@ def _format_package_risk_card(item: dict[str, Any]) -> list[str]:
         lines.append("</details>")
         lines.append("")
     if summ.get("content_scan_error"):
-        lines.append(f"> Static analysis error: {summ['content_scan_error']}")
+        lines.append(f"> Static analysis error: {escape_markdown_inline(str(summ['content_scan_error']))}")
         lines.append("")
     lines.append(
         "**If intentional:** add `.chaintrap.yml` ignore (reason + expiry) "
@@ -182,12 +183,12 @@ def format_summary_markdown(
     dashboard_url: str | None = None,
     org_id: str | None = None,
 ) -> str:
-    scan_id = str(rollup.get("bundle_id") or "")
-    repo = str(rollup.get("source_repo") or "")
-    ref = str(rollup.get("source_ref") or "")
-    status = str(rollup.get("bundle_status") or "")
-    scan_mode = str(rollup.get("scan_mode") or "runner-osv-ioc")
-    discovery = str(rollup.get("discovery_mode") or "full")
+    scan_id = escape_markdown_inline(str(rollup.get("bundle_id") or ""))
+    repo = escape_markdown_inline(str(rollup.get("source_repo") or ""))
+    ref = escape_markdown_inline(str(rollup.get("source_ref") or ""))
+    status = escape_markdown_inline(str(rollup.get("bundle_status") or ""))
+    scan_mode = escape_markdown_inline(str(rollup.get("scan_mode") or "runner-osv-ioc"))
+    discovery = escape_markdown_inline(str(rollup.get("discovery_mode") or "full"))
     resolution_warnings = (
         rollup.get("resolution_warnings")
         if isinstance(rollup.get("resolution_warnings"), list)
@@ -236,8 +237,8 @@ def format_summary_markdown(
         for warn in resolution_warnings:
             if not isinstance(warn, dict):
                 continue
-            manifest = warn.get("manifest") or "manifest"
-            err = warn.get("error") or "unknown error"
+            manifest = escape_markdown_inline(str(warn.get("manifest") or "manifest"))
+            err = escape_markdown_inline(str(warn.get("error") or "unknown error"))
             lines.append(f"- `{manifest}`: {err}")
         lines.append("")
         lines.append("</details>")
@@ -251,7 +252,10 @@ def format_summary_markdown(
         lines.append("| --- | --- | --- | --- |")
         for f in wf:
             lines.append(
-                f"| `{f.get('rule_id')}` | {f.get('severity')} | `{f.get('file')}` | {f.get('message')} |"
+                f"| `{escape_markdown_inline(str(f.get('rule_id') or ''))}` | "
+                f"{escape_markdown_cell(str(f.get('severity') or ''))} | "
+                f"`{escape_markdown_inline(str(f.get('file') or ''))}` | "
+                f"{escape_markdown_cell(str(f.get('message') or ''))} |"
             )
         lines.append("")
         lines.append("</details>")
@@ -275,7 +279,7 @@ def format_summary_markdown(
             lines.append("| Package | OSV advisories |")
             lines.append("| --- | --- |")
             for item in eco_items:
-                spec = str(item.get("package_spec") or "")
+                spec = escape_markdown_inline(str(item.get("package_spec") or ""))
                 advisories = _format_osv_advisory_links(_osv_id_list(_item_summary(item), "vulnerable_osv_ids"))
                 lines.append(f"| `{spec}` | {advisories} |")
             lines.append("")
