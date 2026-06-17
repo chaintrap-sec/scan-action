@@ -1,3 +1,4 @@
+# Minimal install: scan + SARIF only (no PR comment step).
 # Copy to consumer repo: .github/workflows/chaintrap.yml
 
 name: Chaintrap
@@ -8,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
   security-events: write
 
 jobs:

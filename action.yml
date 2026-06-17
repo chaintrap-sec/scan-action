@@ -1,5 +1,5 @@
 name: Chaintrap Supply Chain Scan
-description: Runner-local malicious dependency + workflow hardening scan (npm/PyPI lockfiles, OSV MAL-*, optional IOC)
+description: Block malicious npm/PyPI deps on every PR — OSV MAL-*, content scan with defanged IOC evidence, CI workflow audit. Runner-local, zero secrets.
 branding:
   icon: shield
   color: teal
