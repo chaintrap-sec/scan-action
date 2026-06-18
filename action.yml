@@ -152,6 +152,8 @@ runs:
         GITHUB_REF_NAME: ${{ github.head_ref || github.ref_name }}
         GITHUB_BASE_REF: ${{ github.base_ref }}
         GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+        CHAINTRAP_DEFAULT_BRANCH: main
         SARIF_FILE: ${{ runner.temp }}/chaintrap.sarif
         SUMMARY_FILE: ${{ runner.temp }}/chaintrap-summary.md
       run: |

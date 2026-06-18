@@ -94,6 +94,74 @@ def _merge_policy(cfg: ScanConfig, policy: ChaintrapPolicy, args: argparse.Names
     return cfg
 
 
+def _item_summary(item: dict[str, Any]) -> dict[str, Any]:
+    summ = item.get("summary")
+    return summ if isinstance(summ, dict) else {}
+
+
+def _osv_id_list(summ: dict[str, Any], key: str) -> list[str]:
+    raw = summ.get(key)
+    if not isinstance(raw, list):
+        return []
+    return [str(x).strip() for x in raw if str(x).strip()]
+
+
+def _parse_package_spec(spec: str) -> tuple[str, str | None]:
+    s = (spec or "").strip()
+    if "@" in s:
+        name, ver = s.rsplit("@", 1)
+        return name, ver or None
+    return s, None
+
+
+def _inventory_item_payload(item: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(item, dict):
+        return None
+    eco = str(item.get("ecosystem") or "npm")
+    spec = str(item.get("package_spec") or "")
+    pkg_name, pkg_ver = _parse_package_spec(spec)
+    if not pkg_name:
+        return None
+    summ = _item_summary(item)
+    mal_ids = _osv_id_list(summ, "malicious_osv_ids")
+    vuln_ids = _osv_id_list(summ, "vulnerable_osv_ids")
+    findings_count = len(mal_ids) + len(vuln_ids) + (1 if summ.get("ioc_hit") else 0)
+    lockfile_path = item.get("lockfile_path") or summ.get("lockfile_path")
+    verdict_level = str(summ.get("verdict_level") or summ.get("risk_level") or "PASS")
+    return {
+        "ecosystem": eco,
+        "package_name": pkg_name,
+        "package_version": pkg_ver or "",
+        "verdict_level": verdict_level,
+        "verdict_score": summ.get("verdict_score"),
+        "findings_count": findings_count,
+        "malicious_osv_ids": mal_ids,
+        "vulnerable_osv_ids": vuln_ids,
+        "lockfile_path": lockfile_path,
+    }
+
+
+def _resolve_branch_tier_for_report(ref: str | None) -> str:
+    event = (os.environ.get("GITHUB_EVENT_NAME") or "").strip().lower()
+    default_branch = (os.environ.get("CHAINTRAP_DEFAULT_BRANCH") or "main").strip()
+    head_ref = (ref or os.environ.get("GITHUB_REF_NAME") or "").strip()
+    if event == "pull_request":
+        return "pr_preview"
+    if head_ref and head_ref != default_branch:
+        return "pr_preview"
+    return "default"
+
+
+def _pr_number_for_report() -> int | None:
+    raw = (os.environ.get("GITHUB_PR_NUMBER") or "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Chaintrap GitHub Actions runner-local SCA")
     p.add_argument("--repo", default=None)
@@ -276,14 +344,27 @@ def run_scan(args: argparse.Namespace) -> int:
                         "category": item.get("category"),
                         "message": item.get("message"),
                     })
+                inventory_payload: list[dict[str, Any]] = []
+                rollup_items = rollup.get("items") if isinstance(rollup.get("items"), list) else []
+                for item in rollup_items:
+                    inv = _inventory_item_payload(item)
+                    if inv:
+                        inventory_payload.append(inv)
+                report_ref = args.ref or os.environ.get("GITHUB_REF_NAME", "")
                 payload = {
                     "org_id": args.org_id or os.environ.get("CHAINTRAP_ORG_ID", "default"),
                     "repo_full_name": args.repo or os.environ.get("GITHUB_REPOSITORY", ""),
-                    "ref": args.ref or os.environ.get("GITHUB_REF_NAME", ""),
+                    "ref": report_ref,
                     "sha": os.environ.get("GITHUB_SHA", ""),
                     "scan_id": "",
                     "findings": findings_payload,
+                    "inventory": inventory_payload,
+                    "package_count": len(inventory_payload),
                     "workflow_findings_count": len(workflow_findings),
+                    "branch_tier": _resolve_branch_tier_for_report(report_ref),
+                    "default_branch": (os.environ.get("CHAINTRAP_DEFAULT_BRANCH") or "main").strip(),
+                    "pr_number": _pr_number_for_report(),
+                    "github_event_name": os.environ.get("GITHUB_EVENT_NAME"),
                 }
                 import urllib.request
                 import json as _json

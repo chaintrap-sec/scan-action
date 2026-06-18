@@ -2,6 +2,18 @@
 
 All notable changes to [chaintrap-sec/scan-action](https://github.com/chaintrap-sec/scan-action).
 
+## [1.4.1] - 2026-06-18
+
+### Added
+
+- **Branch-tiered inventory reporting** — CI reports send `branch_tier` (`default` vs `pr_preview`), `default_branch`, and `pr_number` so PR scans no longer overwrite live default-branch package inventory on the Chaintrap dashboard
+- Lockfile **inventory payload** on optional API report (`inventory`, `package_count`, per-package OSV fields)
+- Action env: `GITHUB_PR_NUMBER`, `CHAINTRAP_DEFAULT_BRANCH` (wired from `github.event.pull_request.number` and repo default branch)
+
+### Changed
+
+- Default-branch (`push` to `main`) scans update **live** inventory only; `pull_request` scans land under **PR previews**
+
 ## [1.4.0] - 2026-06-17
 
 ### Added
