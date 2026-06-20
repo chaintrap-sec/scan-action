@@ -1,11 +1,15 @@
 # Chaintrap Scan Action
 
+> **Runner-local malicious dependency + workflow hardening GitHub Action**
+
 **Stop malicious npm and PyPI packages before they merge — on every pull request.**
 
 [![GitHub release](https://img.shields.io/github/v/release/chaintrap-sec/scan-action?label=release)](https://github.com/chaintrap-sec/scan-action/releases)
 [![License](https://img.shields.io/github/license/chaintrap-sec/scan-action)](LICENSE)
 
-Protects **npm** and **PyPI** dependencies in your repo. No API keys. Your code stays on GitHub — nothing is sent to Chaintrap.
+Protects **npm** and **PyPI** dependencies in your repo. No API keys required for core scanning. Your code stays on your GitHub runner — lockfiles and manifests are not uploaded to Chaintrap for SCA.
+
+Chaintrap protects **private and public codebases** the same way: add CI to the repos you care about, scan dependencies and install surfaces on your runner, and optionally feed results into the dashboard. It also scans public registry/marketplace packages and enrolled endpoints — not just public GitHub repos.
 
 ---
 
