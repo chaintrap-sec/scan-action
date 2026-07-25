@@ -155,10 +155,32 @@ def test_npm_tarball_allows_registry():
     )
 
 
+def test_npm_tarball_allows_same_origin_mock_registry():
+    base = "http://127.0.0.1:8765"
+    assert (
+        validate_npm_tarball_url(f"{base}/artifacts/foo.tgz", registry_base=base) is None
+    )
+    assert validate_npm_tarball_url(f"{base}/artifacts/foo.tgz") is not None
+    assert (
+        validate_npm_tarball_url("http://evil.example/x.tgz", registry_base=base)
+        is not None
+    )
+
+
 def test_pypi_artifact_allows_cdn():
     assert (
         validate_pypi_artifact_url(
             "https://files.pythonhosted.org/packages/ab/cd/ef/foo-1.0.0-py3-none-any.whl"
+        )
+        is None
+    )
+
+
+def test_pypi_artifact_allows_same_origin_mock_registry():
+    base = "http://127.0.0.1:8765/pypi"
+    assert (
+        validate_pypi_artifact_url(
+            "http://127.0.0.1:8765/artifacts/foo.whl", pypi_base=base
         )
         is None
     )

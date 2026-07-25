@@ -115,7 +115,40 @@ def _registry_host_from_base(base_url: str) -> str | None:
     return host
 
 
+def _default_port(scheme: str) -> int | None:
+    s = scheme.lower()
+    if s == "https":
+        return 443
+    if s == "http":
+        return 80
+    return None
+
+
+def _same_origin(url: str, base: str) -> bool:
+    """True when url and base share scheme+host+port (path ignored).
+
+    Lets offline/mock registries (http://127.0.0.1:PORT) serve artifacts from the
+    same origin when CHAINTRAP_NPM_REGISTRY / CHAINTRAP_PYPI_BASE point there.
+    Production CDN hosts still go through the HTTPS allowlist.
+    """
+    try:
+        u = urllib.parse.urlparse(url.strip())
+        b_raw = base.strip()
+        b = urllib.parse.urlparse(b_raw if "://" in b_raw else f"https://{b_raw}")
+    except ValueError:
+        return False
+    if not u.scheme or not b.scheme or not u.hostname or not b.hostname:
+        return False
+    if u.scheme.lower() != b.scheme.lower():
+        return False
+    if u.hostname.lower() != b.hostname.lower():
+        return False
+    return (u.port or _default_port(u.scheme)) == (b.port or _default_port(b.scheme))
+
+
 def validate_npm_tarball_url(url: str, *, registry_base: str | None = None) -> str | None:
+    if registry_base and _same_origin(url, registry_base):
+        return None
     extra = ()
     if registry_base:
         h = _registry_host_from_base(registry_base)
@@ -125,6 +158,8 @@ def validate_npm_tarball_url(url: str, *, registry_base: str | None = None) -> s
 
 
 def validate_pypi_artifact_url(url: str, *, pypi_base: str | None = None) -> str | None:
+    if pypi_base and _same_origin(url, pypi_base):
+        return None
     extra: tuple[str, ...] = ()
     if pypi_base:
         h = _registry_host_from_base(pypi_base)
